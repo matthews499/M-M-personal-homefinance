@@ -1,0 +1,51 @@
+import { useDashboard } from '../../hooks/useDashboard'
+import { usePersonalVariable } from '../../hooks/usePersonalVariable'
+import { usePersonalMisc } from '../../hooks/usePersonalMisc'
+import { currency } from '../../utils/format'
+import { monthParam } from '../../utils/dates'
+import { sumAmount } from '../../utils/calculations'
+import { t } from '../../utils/theme'
+
+export default function PersonalRemaining() {
+  const month = monthParam()
+  const { derived, loading: dashLoading } = useDashboard()
+  const { categories, loading: varLoading } = usePersonalVariable(month)
+  const { miscForMonth, loading: miscLoading } = usePersonalMisc()
+
+  const loading = dashLoading || varLoading || miscLoading
+
+  if (loading || !derived) {
+    return (
+      <div className="rounded-2xl p-5" style={{ backgroundColor: 'rgba(129,140,248,0.10)', border: `1px solid rgba(129,140,248,0.20)` }}>
+        <p className="text-xs" style={{ color: t.textMuted }}>Loading…</p>
+      </div>
+    )
+  }
+
+  const varBudget  = categories.reduce((acc, c) => acc + Number(c.monthly_budget), 0)
+  const miscTotal  = sumAmount(miscForMonth(month))
+  const remaining  = derived.myDisposable - varBudget - miscTotal
+  const positive   = remaining >= 0
+
+  return (
+    <div
+      className="rounded-2xl px-5 py-4"
+      style={{
+        backgroundColor: positive ? 'rgba(52,211,153,0.08)' : 'rgba(244,63,94,0.08)',
+        border: `1px solid ${positive ? 'rgba(52,211,153,0.20)' : 'rgba(244,63,94,0.20)'}`,
+      }}
+    >
+      <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: positive ? t.green : t.red }}>
+        Remaining this month
+      </p>
+      <p className="text-3xl font-bold tracking-tight tabular-nums" style={{ color: positive ? t.green : t.red }}>
+        {currency(remaining)}
+      </p>
+      <div className="flex gap-4 mt-2.5 flex-wrap">
+        <span className="text-xs" style={{ color: t.textMuted }}>Disposable <span className="font-semibold" style={{ color: t.textSecondary }}>{currency(derived.myDisposable)}</span></span>
+        <span className="text-xs" style={{ color: t.textMuted }}>Var budget <span className="font-semibold" style={{ color: t.textSecondary }}>−{currency(varBudget)}</span></span>
+        <span className="text-xs" style={{ color: t.textMuted }}>Misc <span className="font-semibold" style={{ color: t.textSecondary }}>−{currency(miscTotal)}</span></span>
+      </div>
+    </div>
+  )
+}
