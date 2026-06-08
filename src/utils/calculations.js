@@ -60,13 +60,22 @@ export function calcPersonalDisposable(jointBalance, matthewRatio, isMatthew, pe
 
 // ── Savings pots ─────────────────────────────────────────────
 
-export function calcSavingsDeposited(deposits = []) {
-  return sumAmount(deposits)
+// Net balance from all logged transactions (deposits add, withdrawals subtract)
+export function calcSavingsBalance(transactions = []) {
+  return transactions.reduce((sum, tx) => {
+    const sign = tx.type === 'withdrawal' ? -1 : 1
+    return sum + sign * Number(tx.amount)
+  }, 0)
 }
 
-// Monthly contribution needed to hit the target by the target date
-export function calcSavingsMonthlyRequired(pot, deposits = []) {
-  const remaining = Number(pot.target_amount) - calcSavingsDeposited(deposits)
+// Backward-compat alias
+export function calcSavingsDeposited(transactions = []) {
+  return calcSavingsBalance(transactions)
+}
+
+// Monthly contribution needed to hit the target by the target date (guide only)
+export function calcSavingsMonthlyRequired(pot, transactions = []) {
+  const remaining = Number(pot.target_amount) - calcSavingsBalance(transactions)
   if (remaining <= 0) return 0
   return remaining / monthsUntil(pot.target_date)
 }

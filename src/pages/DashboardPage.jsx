@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDashboard } from '../hooks/useDashboard'
+import { useTransfers } from '../hooks/useTransfers'
 import { currency, greeting } from '../utils/format'
 import { monthLabel, ordinal } from '../utils/dates'
 import { t, cardStyle, surfaceStyle, inputStyle } from '../utils/theme'
@@ -160,6 +161,10 @@ function SplitModal({ ratio, isLocked, onSave, onUnlock, onClose }) {
 
 // ── What-if calculator ───────────────────────────────────────────
 
+const AMBER_BG    = 'rgba(251,146,60,0.10)'
+const AMBER_BORD  = 'rgba(251,146,60,0.30)'
+const AMBER_INPUT = { backgroundColor: 'rgba(251,146,60,0.08)', border: '1px solid rgba(251,146,60,0.25)', color: 'var(--color-text-primary)' }
+
 function WhatIfModal({ derived, onClose }) {
   const { matthew, maddy, fixedTotal, varBudget, matthewRatio } = derived
 
@@ -178,79 +183,93 @@ function WhatIfModal({ derived, onClose }) {
   const positive  = balance >= 0
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }} onClick={onClose}>
-      <div className="w-full md:max-w-sm rounded-t-3xl md:rounded-2xl p-6 pb-10 md:pb-6 space-y-5" style={{ backgroundColor: t.card, border: `1px solid ${t.cardBorder}`, maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-        <SheetHandle />
-        <div>
-          <h2 className="text-base font-bold" style={{ color: t.textPrimary }}>What-if calculator</h2>
-          <p className="text-xs mt-1" style={{ color: t.textMuted }}>Adjust values to model different scenarios. Nothing is saved.</p>
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.85)' }} onClick={onClose}>
+      <div
+        className="w-full md:max-w-sm rounded-t-3xl md:rounded-2xl overflow-hidden"
+        style={{ backgroundColor: t.card, border: `1px solid ${AMBER_BORD}`, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 0 0 1px rgba(251,146,60,0.15), 0 24px 64px rgba(0,0,0,0.6)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Persistent simulation mode banner */}
+        <div className="flex items-center gap-2 px-5 py-3" style={{ backgroundColor: 'rgba(251,146,60,0.15)', borderBottom: `1px solid ${AMBER_BORD}` }}>
+          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: t.amber }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <p className="text-xs font-semibold" style={{ color: t.amber }}>Simulation mode — no data will be saved</p>
         </div>
 
-        {/* Inputs */}
-        <div className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: t.textMuted }}>Matthew</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <p className="text-xs mb-1.5" style={{ color: t.textMuted }}>Salary (£)</p>
-              <input type="number" value={mSalary} onChange={e => setMSalary(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
-            </div>
-            <div>
-              <p className="text-xs mb-1.5" style={{ color: t.textMuted }}>Personal fixed (£)</p>
-              <input type="number" value={mFixed} onChange={e => setMFixed(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
-            </div>
-          </div>
-
-          <p className="text-xs font-semibold uppercase tracking-widest pt-1" style={{ color: t.textMuted }}>Maddy</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <p className="text-xs mb-1.5" style={{ color: t.textMuted }}>Salary (£)</p>
-              <input type="number" value={dSalary} onChange={e => setDSalary(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
-            </div>
-            <div>
-              <p className="text-xs mb-1.5" style={{ color: t.textMuted }}>Personal fixed (£)</p>
-              <input type="number" value={dFixed} onChange={e => setDFixed(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
-            </div>
-          </div>
-
+        <div className="p-6 pb-10 md:pb-6 space-y-5">
+          <SheetHandle />
           <div>
-            <div className="flex justify-between mb-2">
-              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: t.textMuted }}>Matthew's split</p>
-              <span className="text-xs font-bold tabular-nums" style={{ color: t.textPrimary }}>{mPct}% / {100 - mPct}%</span>
+            <h2 className="text-base font-bold" style={{ color: t.amber }}>What-if calculator</h2>
+            <p className="text-xs mt-1" style={{ color: t.textMuted }}>Adjust values to model different scenarios.</p>
+          </div>
+
+          {/* Inputs */}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: t.amber }}>Matthew</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs mb-1.5" style={{ color: t.textMuted }}>Salary (£)</p>
+                <input type="number" value={mSalary} onChange={e => setMSalary(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none" style={{ ...AMBER_INPUT, borderRadius: '0.75rem' }} />
+              </div>
+              <div>
+                <p className="text-xs mb-1.5" style={{ color: t.textMuted }}>Personal fixed (£)</p>
+                <input type="number" value={mFixed} onChange={e => setMFixed(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none" style={{ ...AMBER_INPUT, borderRadius: '0.75rem' }} />
+              </div>
             </div>
-            <input type="range" min={0} max={100} value={mPct} onChange={e => setMPct(Number(e.target.value))} className="w-full accent-violet-500" />
-          </div>
-        </div>
 
-        {/* Results */}
-        <div className="rounded-xl p-4 space-y-2.5" style={{ backgroundColor: positive ? 'rgba(52,211,153,0.08)' : 'rgba(244,63,94,0.08)', border: `1px solid ${positive ? 'rgba(52,211,153,0.20)' : 'rgba(244,63,94,0.20)'}` }}>
-          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: positive ? t.green : t.red }}>Projected outcome</p>
-          <div className="flex justify-between">
-            <span className="text-sm" style={{ color: t.textSecondary }}>Contributions in</span>
-            <span className="text-sm font-semibold tabular-nums" style={{ color: t.textPrimary }}>{currency(totalIn)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-sm" style={{ color: t.textSecondary }}>Fixed outgoings</span>
-            <span className="text-sm font-semibold tabular-nums" style={{ color: t.red }}>−{currency(fixedTotal)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-sm" style={{ color: t.textSecondary }}>Variable budget</span>
-            <span className="text-sm font-semibold tabular-nums" style={{ color: t.red }}>−{currency(varBudget)}</span>
-          </div>
-          <div className="flex justify-between pt-1" style={{ borderTop: `1px solid ${t.divider}` }}>
-            <span className="text-sm font-semibold" style={{ color: t.textPrimary }}>Joint balance</span>
-            <span className="text-base font-bold tabular-nums" style={{ color: positive ? t.green : t.red }}>{currency(balance)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-sm" style={{ color: t.textSecondary }}>Matthew disposable</span>
-            <span className="text-sm font-semibold tabular-nums" style={{ color: mDisp >= 0 ? t.green : t.red }}>{currency(mDisp)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-sm" style={{ color: t.textSecondary }}>Maddy disposable</span>
-            <span className="text-sm font-semibold tabular-nums" style={{ color: dDisp >= 0 ? t.green : t.red }}>{currency(dDisp)}</span>
-          </div>
-        </div>
+            <p className="text-xs font-semibold uppercase tracking-widest pt-1" style={{ color: t.amber }}>Maddy</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs mb-1.5" style={{ color: t.textMuted }}>Salary (£)</p>
+                <input type="number" value={dSalary} onChange={e => setDSalary(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none" style={{ ...AMBER_INPUT, borderRadius: '0.75rem' }} />
+              </div>
+              <div>
+                <p className="text-xs mb-1.5" style={{ color: t.textMuted }}>Personal fixed (£)</p>
+                <input type="number" value={dFixed} onChange={e => setDFixed(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none" style={{ ...AMBER_INPUT, borderRadius: '0.75rem' }} />
+              </div>
+            </div>
 
-        <button onClick={onClose} className="w-full py-3 rounded-xl text-sm font-medium" style={{ backgroundColor: 'var(--color-pill-bg)', color: t.textSecondary }}>Close</button>
+            <div>
+              <div className="flex justify-between mb-2">
+                <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: t.amber }}>Matthew's split</p>
+                <span className="text-xs font-bold tabular-nums" style={{ color: t.amber }}>{mPct}% / {100 - mPct}%</span>
+              </div>
+              <input type="range" min={0} max={100} value={mPct} onChange={e => setMPct(Number(e.target.value))} className="w-full accent-orange-400" />
+            </div>
+          </div>
+
+          {/* Results */}
+          <div className="rounded-xl p-4 space-y-2.5" style={{ backgroundColor: positive ? 'rgba(52,211,153,0.08)' : 'rgba(244,63,94,0.08)', border: `1px solid ${positive ? 'rgba(52,211,153,0.20)' : 'rgba(244,63,94,0.20)'}` }}>
+            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: positive ? t.green : t.red }}>Projected outcome</p>
+            <div className="flex justify-between">
+              <span className="text-sm" style={{ color: t.textSecondary }}>Contributions in</span>
+              <span className="text-sm font-semibold tabular-nums" style={{ color: t.textPrimary }}>{currency(totalIn)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm" style={{ color: t.textSecondary }}>Fixed outgoings</span>
+              <span className="text-sm font-semibold tabular-nums" style={{ color: t.red }}>−{currency(fixedTotal)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm" style={{ color: t.textSecondary }}>Variable budget</span>
+              <span className="text-sm font-semibold tabular-nums" style={{ color: t.red }}>−{currency(varBudget)}</span>
+            </div>
+            <div className="flex justify-between pt-1" style={{ borderTop: `1px solid ${t.divider}` }}>
+              <span className="text-sm font-semibold" style={{ color: t.textPrimary }}>Joint balance</span>
+              <span className="text-base font-bold tabular-nums" style={{ color: positive ? t.green : t.red }}>{currency(balance)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm" style={{ color: t.textSecondary }}>Matthew disposable</span>
+              <span className="text-sm font-semibold tabular-nums" style={{ color: mDisp >= 0 ? t.green : t.red }}>{currency(mDisp)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm" style={{ color: t.textSecondary }}>Maddy disposable</span>
+              <span className="text-sm font-semibold tabular-nums" style={{ color: dDisp >= 0 ? t.green : t.red }}>{currency(dDisp)}</span>
+            </div>
+          </div>
+
+          <button onClick={onClose} className="w-full py-3 rounded-xl text-sm font-semibold" style={{ backgroundColor: 'rgba(251,146,60,0.15)', color: t.amber }}>Close</button>
+        </div>
       </div>
     </div>
   )
@@ -261,6 +280,7 @@ function WhatIfModal({ derived, onClose }) {
 export default function DashboardPage() {
   const navigate = useNavigate()
   const { derived, loading, updateProfile, updateSplitRatio } = useDashboard()
+  const { transfers, transferNetForUser } = useTransfers()
   const [editProfile, setEditProfile] = useState(false)
   const [editSplit,   setEditSplit]   = useState(false)
   const [showWhatIf,  setShowWhatIf]  = useState(false)
@@ -292,6 +312,13 @@ export default function DashboardPage() {
   const surplus = jointBalance >= 0
   const totalContribs = totalIn
   const period = getCurrentPeriod()
+
+  // Transfer net adjustment for my disposable
+  const transferNet = transferNetForUser(period, me.user_id)
+  const adjustedDisposable = myDisposable + transferNet
+
+  // Recent transfers for this period (last 5)
+  const recentTransfers = transfers.filter(tr => tr.period === period).slice(0, 5)
 
   return (
     <div className="space-y-3">
@@ -398,14 +425,19 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between">
           <div>
             <Label>Your disposable income</Label>
-            <p className="text-3xl font-bold tracking-tight tabular-nums mt-2" style={{ color: myDisposable >= 0 ? t.green : t.red }}>
-              {currency(myDisposable)}
+            <p className="text-3xl font-bold tracking-tight tabular-nums mt-2" style={{ color: adjustedDisposable >= 0 ? t.green : t.red }}>
+              {currency(adjustedDisposable)}
             </p>
             <p className="text-xs mt-2" style={{ color: t.textMuted }}>
               {isMatthew ? `${Math.round(matthewRatio * 100)}%` : `${Math.round(maddyRatio * 100)}%`} of joint surplus
+              {transferNet !== 0 && (
+                <span style={{ color: transferNet > 0 ? t.green : t.red }}>
+                  {transferNet > 0 ? ` · +${currency(transferNet)} received` : ` · −${currency(Math.abs(transferNet))} sent`}
+                </span>
+              )}
             </p>
           </div>
-          {/* Feature 6: lock icon */}
+          {/* Lock icon */}
           <div className="shrink-0 ml-3 flex flex-col items-center gap-1">
             {splitLocked ? (
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: t.amber }}>
@@ -422,6 +454,32 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Recent transfers ── */}
+      {recentTransfers.length > 0 && (
+        <div className="rounded-2xl p-5" style={cardStyle}>
+          <Label>Recent transfers — {getPeriodLabel(period)}</Label>
+          <div className="mt-3 space-y-0">
+            {recentTransfers.map(tr => {
+              const isSender = tr.sender_id === me.user_id
+              return (
+                <div key={tr.id} className="flex items-center justify-between py-2.5" style={{ borderBottom: `1px solid ${t.divider}` }}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate" style={{ color: t.textPrimary }}>
+                      {isSender ? `To ${tr.recipient?.name ?? 'other'}` : `From ${tr.sender?.name ?? 'other'}`}
+                    </p>
+                    {tr.note && <p className="text-xs mt-0.5 truncate" style={{ color: t.textMuted }}>{tr.note}</p>}
+                    <p className="text-xs mt-0.5" style={{ color: t.textMuted }}>{tr.transfer_date}</p>
+                  </div>
+                  <span className="text-sm font-bold tabular-nums ml-3" style={{ color: isSender ? t.red : t.green }}>
+                    {isSender ? '−' : '+'}{currency(tr.amount)}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Navigation ── */}
       <div className="grid grid-cols-2 gap-3 pt-1">

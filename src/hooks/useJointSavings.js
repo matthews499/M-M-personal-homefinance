@@ -4,33 +4,34 @@ import { calcSavingsMonthlyRequired } from '../utils/calculations'
 import { broadcast } from '../utils/broadcast'
 
 export function useJointSavings() {
-  const [pots, setPots]         = useState([])
-  const [deposits, setDeposits] = useState([])
-  const [loading, setLoading]   = useState(true)
-  const [error, setError]       = useState(null)
+  const [pots,         setPots]         = useState([])
+  const [transactions, setTransactions] = useState([])   // replaces "deposits"
+  const [loading, setLoading]           = useState(true)
+  const [error,   setError]             = useState(null)
 
   const fetch = useCallback(async () => {
     setLoading(true)
-    const [potsRes, depositsRes] = await Promise.all([
+    const [potsRes, txRes] = await Promise.all([
       supabase.from('joint_savings_pots').select('*').order('name'),
-      supabase.from('joint_savings_deposits').select('*').order('month'),
+      supabase.from('joint_savings_deposits').select('*').order('transaction_date', { ascending: false }),
     ])
-    if (potsRes.error)    setError(potsRes.error.message)
-    if (depositsRes.error) setError(depositsRes.error.message)
+    if (potsRes.error) setError(potsRes.error.message)
+    if (txRes.error)   setError(txRes.error.message)
     setPots(potsRes.data ?? [])
-    setDeposits(depositsRes.data ?? [])
+    setTransactions(txRes.data ?? [])
     setLoading(false)
   }, [])
 
   useEffect(() => { fetch() }, [fetch])
 
-  function depositsForPot(potId) {
-    return deposits.filter(d => d.pot_id === potId)
+  function transactionsForPot(potId) {
+    return transactions.filter(t => t.pot_id === potId)
   }
+  // backward-compat alias
+  const depositsForPot = transactionsForPot
 
   // Creating a pot also inserts a matching joint_fixed_outgoing
   async function createPot(fields) {
-    // 1. Insert the pot
     const { data: pot, error: potErr } = await supabase
       .from('joint_savings_pots')
       .insert(fields)
@@ -38,10 +39,8 @@ export function useJointSavings() {
       .single()
     if (potErr) throw new Error(potErr.message)
 
-    // 2. Calculate the required monthly contribution
     const monthly = calcSavingsMonthlyRequired(pot, [])
 
-    // 3. Create the fixed outgoing entry
     const { data: outgoing, error: fixedErr } = await supabase
       .from('joint_fixed_outgoings')
       .insert({
@@ -55,17 +54,15 @@ export function useJointSavings() {
       .single()
     if (fixedErr) throw new Error(fixedErr.message)
 
-    // 4. Link the fixed outgoing back to the pot
     await supabase
       .from('joint_savings_pots')
       .update({ fixed_outgoing_id: outgoing.id })
       .eq('id', pot.id)
 
     await fetch()
-    broadcast('joint-fixed') // new pot created a joint_fixed_outgoing
+    broadcast('joint-fixed')
   }
 
-  // Updating target or date recalculates the linked fixed outgoing
   async function updatePot(id, fields) {
     const { error } = await supabase
       .from('joint_savings_pots')
@@ -73,12 +70,11 @@ export function useJointSavings() {
       .eq('id', id)
     if (error) throw new Error(error.message)
 
-    // Recalculate the linked fixed outgoing amount
     const pot = pots.find(p => p.id === id)
     if (pot?.fixed_outgoing_id) {
       const updatedPot = { ...pot, ...fields }
-      const potDeposits = depositsForPot(id)
-      const monthly = calcSavingsMonthlyRequired(updatedPot, potDeposits)
+      const potTxns = transactionsForPot(id)
+      const monthly = calcSavingsMonthlyRequired(updatedPot, potTxns)
       await supabase
         .from('joint_fixed_outgoings')
         .update({ amount: monthly })
@@ -92,7 +88,6 @@ export function useJointSavings() {
   async function removePot(id) {
     const pot = pots.find(p => p.id === id)
 
-    // Remove pot (cascades deposits); also remove the linked fixed outgoing
     const { error } = await supabase
       .from('joint_savings_pots')
       .delete()
@@ -110,15 +105,26 @@ export function useJointSavings() {
     await fetch()
   }
 
-  async function addDeposit(potId, amount, month) {
+  // Add a deposit or withdrawal
+  async function addTransaction(potId, { type, amount, transaction_date, note }) {
     const { error } = await supabase
       .from('joint_savings_deposits')
-      .insert({ pot_id: potId, amount, month })
+      .insert({ pot_id: potId, type, amount, transaction_date, note })
     if (error) throw new Error(error.message)
     await fetch()
   }
 
-  async function removeDeposit(id) {
+  // Legacy shim used by old DepositModal calls (amount, month)
+  async function addDeposit(potId, amount, month) {
+    return addTransaction(potId, {
+      type: 'deposit',
+      amount,
+      transaction_date: month,
+      note: '',
+    })
+  }
+
+  async function removeTransaction(id) {
     const { error } = await supabase
       .from('joint_savings_deposits')
       .delete()
@@ -129,7 +135,9 @@ export function useJointSavings() {
 
   return {
     pots,
-    deposits,
+    transactions,
+    deposits: transactions, // backward compat
+    transactionsForPot,
     depositsForPot,
     loading,
     error,
@@ -137,7 +145,8 @@ export function useJointSavings() {
     createPot,
     updatePot,
     removePot,
+    addTransaction,
     addDeposit,
-    removeDeposit,
+    removeTransaction,
   }
 }
