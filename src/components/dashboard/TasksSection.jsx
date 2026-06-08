@@ -1,7 +1,19 @@
+import { useEffect } from 'react'
 import { useTasks } from '../../hooks/useTasks'
 import { useAuth } from '../../lib/AuthContext'
 import { getCurrentPeriod } from '../../utils/payCycle'
+import { checkTaskDueAlerts } from '../../utils/checkTaskDueAlerts'
+import { format, parseISO } from 'date-fns'
+
 const fmt = n => Number(n).toFixed(2)
+
+function fmtDueDate(period) {
+  try {
+    return format(parseISO(`${period}-25`), 'd MMM')
+  } catch {
+    return `${period}-25`
+  }
+}
 
 export function TasksSection() {
   const { session } = useAuth()
@@ -9,6 +21,10 @@ export function TasksSection() {
   const { activeTasks, completeTask, loading } = useTasks()
   const period = getCurrentPeriod()
   const tasks  = activeTasks(period)
+
+  useEffect(() => {
+    checkTaskDueAlerts(userId)
+  }, [userId])
 
   if (loading) return null
   if (!tasks.length) return null
@@ -33,8 +49,9 @@ export function TasksSection() {
 
       <ul className="space-y-2">
         {tasks.map(task => {
-          const isOwn   = task.user_id === userId
+          const isOwn    = task.user_id === userId
           const userName = task.user?.name ?? 'You'
+          const dueDate  = fmtDueDate(task.period)
 
           return (
             <li
@@ -49,35 +66,35 @@ export function TasksSection() {
                   className="mt-0.5 flex-shrink-0 transition-opacity hover:opacity-70 active:scale-95"
                   title="Mark complete"
                 >
-                  {/* circle (unticked) */}
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: 'var(--color-text-secondary)' }}>
                     <circle cx="12" cy="12" r="10" /><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
                   </svg>
                 </button>
               ) : (
-                /* greyed-out solid check for partner's tasks */
                 <svg className="mt-0.5 w-5 h-5 flex-shrink-0 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: 'var(--color-text-secondary)' }}>
                   <circle cx="12" cy="12" r="10" /><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
                 </svg>
               )}
 
               <div className="flex-1 min-w-0">
-                <p
-                  className="text-sm leading-snug"
-                  style={{ color: 'var(--color-text-primary)' }}
-                >
+                <p className="text-sm leading-snug" style={{ color: 'var(--color-text-primary)' }}>
                   {task.title}
                 </p>
-                {!isOwn && (
-                  <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>
-                    {userName}'s task
+                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                  {!isOwn && (
+                    <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                      {userName}'s task
+                    </p>
+                  )}
+                  <p className="text-xs" style={{ color: '#9898a8' }}>
+                    Due {dueDate}
                   </p>
-                )}
-                {task.period < period && (
-                  <p className="text-xs mt-0.5" style={{ color: '#f59e0b' }}>
-                    Carried over from {task.period}
-                  </p>
-                )}
+                  {task.period < period && (
+                    <p className="text-xs" style={{ color: '#f59e0b' }}>
+                      Carried over from {task.period}
+                    </p>
+                  )}
+                </div>
               </div>
 
               {task.amount > 0 && (

@@ -27,18 +27,34 @@ export function useTransfers() {
 
   useEffect(() => {
     fetch()
-    return listenFor(KEY, fetch)
+    // Same-tab broadcast reactivity
+    const unsub = listenFor(KEY, fetch)
+
+    // Cross-device realtime so recipient updates immediately when sender transfers
+    const channel = supabase
+      .channel('transfers-realtime')
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'personal_transfers' },
+        () => { fetch(); broadcast(KEY) }
+      )
+      .on('postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'personal_transfers' },
+        () => { fetch(); broadcast(KEY) }
+      )
+      .subscribe()
+
+    return () => {
+      unsub()
+      supabase.removeChannel(channel)
+    }
   }, [fetch])
 
   function transfersForPeriod(period) {
     return transfers.filter(t => t.period === period)
   }
 
-  /** Net effect of transfers on the given user's disposable for a period.
-   *  Positive = net received, negative = net sent. */
   function transferNetForUser(period, forUserId) {
-    const pt = transfersForPeriod(period)
-    return pt.reduce((sum, t) => {
+    return transfersForPeriod(period).reduce((sum, t) => {
       if (t.recipient_id === forUserId) return sum + Number(t.amount)
       if (t.sender_id    === forUserId) return sum - Number(t.amount)
       return sum
@@ -46,39 +62,21 @@ export function useTransfers() {
   }
 
   async function sendTransfer({ recipientId, amount, period, transfer_date, note }) {
-    const { error } = await supabase
-      .from('personal_transfers')
-      .insert({
-        sender_id:    userId,
-        recipient_id: recipientId,
-        amount:       parseFloat(amount),
-        period,
-        transfer_date,
-        note: note ?? '',
-      })
+    const { error } = await supabase.from('personal_transfers').insert({
+      sender_id: userId, recipient_id: recipientId,
+      amount: parseFloat(amount), period, transfer_date, note: note ?? '',
+    })
     if (error) throw new Error(error.message)
     await fetch()
     broadcast(KEY)
   }
 
   async function removeTransfer(id) {
-    const { error } = await supabase
-      .from('personal_transfers')
-      .delete()
-      .eq('id', id)
+    const { error } = await supabase.from('personal_transfers').delete().eq('id', id)
     if (error) throw new Error(error.message)
     await fetch()
     broadcast(KEY)
   }
 
-  return {
-    transfers,
-    loading,
-    error,
-    transfersForPeriod,
-    transferNetForUser,
-    sendTransfer,
-    removeTransfer,
-    refetch: fetch,
-  }
+  return { transfers, loading, error, transfersForPeriod, transferNetForUser, sendTransfer, removeTransfer, refetch: fetch }
 }

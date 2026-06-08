@@ -31,37 +31,81 @@ function Sheet({ onClose, children }) {
   )
 }
 
+// ── New pot modal — supports both modes ──────────────────────────
+
 function NewPotModal({ onSave, onClose }) {
+  const [mode,       setMode]       = useState('targeted')
   const [name,       setName]       = useState('')
   const [target,     setTarget]     = useState('')
   const [targetDate, setTargetDate] = useState('')
+  const [monthly,    setMonthly]    = useState('')
   const [saving,     setSaving]     = useState(false)
   const [err,        setErr]        = useState(null)
 
   async function handleSave() {
-    if (!name.trim() || !target || !targetDate) { setErr('All fields are required.'); return }
+    if (!name.trim()) { setErr('Name is required.'); return }
+    if (mode === 'targeted' && (!target || !targetDate)) { setErr('Target amount and date are required.'); return }
+    if (mode === 'open' && !monthly) { setErr('Monthly commitment is required.'); return }
     setSaving(true)
-    try { await onSave({ name: name.trim(), target_amount: parseFloat(target), target_date: targetDate }); onClose() }
-    catch (e) { setErr(e.message); setSaving(false) }
+    try {
+      if (mode === 'targeted') {
+        await onSave({ name: name.trim(), mode: 'targeted', target_amount: parseFloat(target), target_date: targetDate })
+      } else {
+        await onSave({ name: name.trim(), mode: 'open', monthly_commitment: parseFloat(monthly) })
+      }
+      onClose()
+    } catch (e) { setErr(e.message); setSaving(false) }
   }
 
   return (
     <Sheet onClose={onClose}>
       <h2 className="text-base font-bold" style={{ color: t.textPrimary }}>New savings pot</h2>
+
+      {/* Mode toggle */}
+      <div className="grid grid-cols-2 gap-2">
+        {[
+          { value: 'targeted', label: 'With target', desc: 'Goal amount & date' },
+          { value: 'open',     label: 'Without target', desc: 'Monthly commitment' },
+        ].map(opt => (
+          <button
+            key={opt.value}
+            onClick={() => setMode(opt.value)}
+            className="rounded-xl p-3 text-left transition-all"
+            style={{
+              border: `1px solid ${mode === opt.value ? t.violet : t.cardBorder}`,
+              backgroundColor: mode === opt.value ? t.violetBg : 'transparent',
+            }}
+          >
+            <p className="text-xs font-semibold" style={{ color: mode === opt.value ? t.violet : t.textPrimary }}>{opt.label}</p>
+            <p className="text-[10px] mt-0.5" style={{ color: t.textMuted }}>{opt.desc}</p>
+          </button>
+        ))}
+      </div>
+
       <div>
         <FieldLabel>Name</FieldLabel>
-        <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. New laptop" autoFocus className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
+        <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder={mode === 'targeted' ? 'e.g. New laptop' : 'e.g. Holiday fund'} autoFocus className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <FieldLabel>Target amount (£)</FieldLabel>
-          <input type="number" value={target} onChange={e => setTarget(e.target.value)} placeholder="0.00" className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
+
+      {mode === 'targeted' ? (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <FieldLabel>Target amount (£)</FieldLabel>
+            <input type="number" value={target} onChange={e => setTarget(e.target.value)} placeholder="0.00" className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
+          </div>
+          <div>
+            <FieldLabel>Target date</FieldLabel>
+            <input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
+          </div>
         </div>
+      ) : (
         <div>
-          <FieldLabel>Target date</FieldLabel>
-          <input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
+          <FieldLabel>Monthly commitment (£)</FieldLabel>
+          <input type="number" value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="0.00" className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
+          <p className="text-xs mt-1.5" style={{ color: t.textMuted }}>Deducted from your personal disposable each period.</p>
         </div>
-      </div>
+      )}
+
       {err && <p className="text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: t.redDim, color: t.red }}>{err}</p>}
       <div className="flex gap-2 pt-1">
         <button onClick={onClose} className="flex-1 py-3 rounded-xl text-sm font-medium" style={{ backgroundColor: 'var(--color-pill-bg)', color: t.textSecondary }}>Cancel</button>
@@ -71,28 +115,46 @@ function NewPotModal({ onSave, onClose }) {
   )
 }
 
+// ── Edit pot modal — branches on mode ────────────────────────────
+
 function EditPotModal({ pot, onSave, onClose }) {
-  const [target,     setTarget]     = useState(pot.target_amount)
-  const [targetDate, setTargetDate] = useState(pot.target_date)
+  // Targeted fields
+  const [target,     setTarget]     = useState(pot.target_amount ?? '')
+  const [targetDate, setTargetDate] = useState(pot.target_date ?? '')
+  // Open fields
+  const [monthly,    setMonthly]    = useState(pot.monthly_commitment ?? '')
   const [saving,     setSaving]     = useState(false)
 
   async function handleSave() {
     setSaving(true)
-    await onSave(pot.id, { target_amount: parseFloat(target), target_date: targetDate })
+    if (pot.mode === 'open') {
+      await onSave(pot.id, { monthly_commitment: parseFloat(monthly) })
+    } else {
+      await onSave(pot.id, { target_amount: parseFloat(target), target_date: targetDate })
+    }
     onClose()
   }
 
   return (
     <Sheet onClose={onClose}>
       <h2 className="text-base font-bold" style={{ color: t.textPrimary }}>Edit — {pot.name}</h2>
-      <div>
-        <FieldLabel>Target amount (£)</FieldLabel>
-        <input type="number" value={target} onChange={e => setTarget(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
-      </div>
-      <div>
-        <FieldLabel>Target date</FieldLabel>
-        <input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
-      </div>
+      {pot.mode === 'open' ? (
+        <div>
+          <FieldLabel>Monthly commitment (£)</FieldLabel>
+          <input type="number" value={monthly} onChange={e => setMonthly(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
+        </div>
+      ) : (
+        <>
+          <div>
+            <FieldLabel>Target amount (£)</FieldLabel>
+            <input type="number" value={target} onChange={e => setTarget(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
+          </div>
+          <div>
+            <FieldLabel>Target date</FieldLabel>
+            <input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
+          </div>
+        </>
+      )}
       <div className="flex gap-2 pt-1">
         <button onClick={onClose} className="flex-1 py-3 rounded-xl text-sm font-medium" style={{ backgroundColor: 'var(--color-pill-bg)', color: t.textSecondary }}>Cancel</button>
         <button onClick={handleSave} disabled={saving} className="flex-1 py-3 rounded-xl text-sm font-semibold disabled:opacity-50" style={{ backgroundColor: t.purple, color: '#fff' }}>{saving ? 'Saving…' : 'Save'}</button>
@@ -100,6 +162,8 @@ function EditPotModal({ pot, onSave, onClose }) {
     </Sheet>
   )
 }
+
+// ── Transaction modal ─────────────────────────────────────────────
 
 function TransactionModal({ pot, onSave, onClose }) {
   const today = new Date().toISOString().slice(0, 10)
@@ -172,6 +236,8 @@ function fmtDate(d) {
   try { return format(parseISO(d), 'd MMM yyyy') } catch { return d ?? '' }
 }
 
+// ── Main component ────────────────────────────────────────────────
+
 export default function PersonalSavings() {
   const { pots, transactionsForPot, loading, createPot, updatePot, removePot, addTransaction, removeTransaction } = usePersonalSavings()
   const [adding,   setAdding]   = useState(false)
@@ -202,31 +268,45 @@ export default function PersonalSavings() {
 
         <div className="space-y-3">
           {pots.map(pot => {
-            const potTxns = transactionsForPot(pot.id)
-            const balance = calcSavingsBalance(potTxns)
-            const target  = Number(pot.target_amount)
-            const monthly = calcSavingsMonthlyRequired(pot, potTxns)
-            const pct     = target > 0 ? Math.min((balance / target) * 100, 100) : 0
-            const done    = balance >= target
-            const isOpen  = expanded === pot.id
+            const potTxns  = transactionsForPot(pot.id)
+            const balance  = calcSavingsBalance(potTxns)
+            const isOpen   = expanded === pot.id
+            const isOpenMode = pot.mode === 'open'
+
+            // Targeted pot vars
+            const target   = Number(pot.target_amount ?? 0)
+            const monthly  = isOpenMode ? Number(pot.monthly_commitment ?? 0) : calcSavingsMonthlyRequired(pot, potTxns)
+            const pct      = !isOpenMode && target > 0 ? Math.min((balance / target) * 100, 100) : 0
+            const done     = !isOpenMode && balance >= target
 
             return (
               <div key={pot.id} className="rounded-xl overflow-hidden" style={surfaceStyle}>
                 <div className="p-4 space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <button className="flex-1 min-w-0 text-left" onClick={() => setExpanded(isOpen ? null : pot.id)}>
-                      <p className="text-sm font-bold" style={{ color: t.textPrimary }}>{pot.name}</p>
-                      <p className="text-xs mt-0.5" style={{ color: t.textMuted }}>Target: {fmtDate(pot.target_date)}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold" style={{ color: t.textPrimary }}>{pot.name}</p>
+                        {isOpenMode && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ backgroundColor: t.violetBg, color: t.violet }}>Open</span>
+                        )}
+                      </div>
+                      {!isOpenMode && (
+                        <p className="text-xs mt-0.5" style={{ color: t.textMuted }}>Target: {fmtDate(pot.target_date)}</p>
+                      )}
+                      {isOpenMode && (
+                        <p className="text-xs mt-0.5" style={{ color: t.textMuted }}>{currency(monthly)}/mo commitment</p>
+                      )}
                     </button>
+
                     <div className="flex items-center gap-1 shrink-0">
-                      {done ? (
+                      {!isOpenMode && done ? (
                         <span className="text-xs px-2 py-0.5 rounded-md font-semibold" style={{ backgroundColor: t.greenDim, color: t.green }}>Complete</span>
-                      ) : (
+                      ) : !isOpenMode ? (
                         <div className="text-right mr-1">
                           <p className="text-xs font-bold tabular-nums" style={{ color: t.violet }}>{currency(monthly)}/mo</p>
                           <p className="text-[10px]" style={{ color: t.textMuted }}>guide</p>
                         </div>
-                      )}
+                      ) : null}
                       <button onClick={() => setEditPot(pot)} className="p-2 rounded-lg active:bg-white/10" style={{ color: t.textMuted }}>
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a4 4 0 01-1.414.828l-3 1 1-3a4 4 0 01.828-1.414z" /></svg>
                       </button>
@@ -236,11 +316,24 @@ export default function PersonalSavings() {
                     </div>
                   </div>
 
-                  <ProgressBar pct={pct} />
-                  <div className="flex justify-between text-xs">
-                    <span className="font-semibold tabular-nums" style={{ color: t.violet }}>{currency(balance)} saved</span>
-                    <span style={{ color: t.textMuted }}>of {currency(target)}</span>
-                  </div>
+                  {/* Targeted: progress bar + balance/target */}
+                  {!isOpenMode && (
+                    <>
+                      <ProgressBar pct={pct} />
+                      <div className="flex justify-between text-xs">
+                        <span className="font-semibold tabular-nums" style={{ color: t.violet }}>{currency(balance)} saved</span>
+                        <span style={{ color: t.textMuted }}>of {currency(target)}</span>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Open: running total */}
+                  {isOpenMode && (
+                    <div className="flex justify-between text-xs">
+                      <span style={{ color: t.textMuted }}>Running total</span>
+                      <span className="font-bold tabular-nums" style={{ color: t.violet }}>{currency(balance)}</span>
+                    </div>
+                  )}
 
                   <button
                     onClick={() => setTxPot(pot)}

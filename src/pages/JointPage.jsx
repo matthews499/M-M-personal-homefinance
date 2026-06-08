@@ -78,7 +78,10 @@ function JointRemaining({ derived, period }) {
   if (!derived) return null
 
   const { totalIn, fixedTotal, varBudget } = derived
-  const miscPeriodTotal = sumAmount(miscItems.filter(i => i.expense_date >= start && i.expense_date <= end))
+  const miscPeriodTotal = sumAmount(miscItems.filter(i =>
+    i.expense_date >= start && i.expense_date <= end &&
+    i.deduction_type !== 'variable'  // already counted in var spending — avoid double-counting
+  ))
   const balance  = totalIn - fixedTotal - varBudget - miscPeriodTotal
   const positive = balance >= 0
 

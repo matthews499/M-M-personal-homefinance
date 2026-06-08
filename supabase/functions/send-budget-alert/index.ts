@@ -178,12 +178,13 @@ serve(async (req) => {
       month,
       userId,
     }: {
-      type: 'joint' | 'personal'
+      type: 'joint' | 'personal' | 'disposable'
       categoryName: string
       amountSpent: number
       budget: number
       month: string
       userId?: string
+      threshold?: string
     } = await req.json()
 
     if (!categoryName || amountSpent == null || !budget || !month || !type) {
@@ -191,22 +192,16 @@ serve(async (req) => {
     }
 
     if (type === 'joint') {
+      // Send to both users
       await Promise.all(
         ALL_USERS.map(u =>
-          sendEmail({
-            to: u.email,
-            recipientName: u.name,
-            categoryName,
-            amountSpent,
-            budget,
-            month,
-            isJoint: true,
-          })
+          sendEmail({ to: u.email, recipientName: u.name, categoryName, amountSpent, budget, month, isJoint: true })
         )
       )
     } else {
+      // 'personal' or 'disposable' — send to a specific user
       if (!userId) {
-        return new Response(JSON.stringify({ error: 'userId required for personal alerts' }), { status: 400 })
+        return new Response(JSON.stringify({ error: 'userId required for personal/disposable alerts' }), { status: 400 })
       }
 
       const user = USERS[userId]
@@ -214,15 +209,7 @@ serve(async (req) => {
         return new Response(JSON.stringify({ error: 'Unknown userId' }), { status: 400 })
       }
 
-      await sendEmail({
-        to: user.email,
-        recipientName: user.name,
-        categoryName,
-        amountSpent,
-        budget,
-        month,
-        isJoint: false,
-      })
+      await sendEmail({ to: user.email, recipientName: user.name, categoryName, amountSpent, budget, month, isJoint: false })
     }
 
     return new Response(JSON.stringify({ ok: true }), {

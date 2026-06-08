@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../lib/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { t, inputStyle } from '../../utils/theme'
+import { useNotifications } from '../../hooks/useNotifications'
 
 // ── Theme helpers ────────────────────────────────────────────────
 
@@ -94,6 +95,88 @@ function PersonalIcon({ active }) {
 const NAV_ICONS = { '/': HomeIcon, '/joint': JointIcon, '/personal': PersonalIcon }
 
 // ── Theme toggle icon ────────────────────────────────────────────
+// ── Notification bell ────────────────────────────────────────────
+
+function NotificationBell() {
+  const { notifications, unreadCount, markAllRead, clearAll } = useNotifications()
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  // Close when clicking outside
+  useEffect(() => {
+    function handle(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [])
+
+  function handleOpen() {
+    setOpen(o => !o)
+    if (!open && unreadCount > 0) markAllRead()
+  }
+
+  const recent = notifications.slice(0, 20)
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={handleOpen}
+        className="relative p-2 rounded-lg transition-colors"
+        style={{ color: unreadCount > 0 ? t.amber : t.textMuted }}
+        title="Notifications"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+        </svg>
+        {unreadCount > 0 && (
+          <span
+            className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold flex items-center justify-center"
+            style={{ backgroundColor: t.amber, color: '#000' }}
+          >
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div
+          className="absolute right-0 top-full mt-2 w-80 rounded-2xl shadow-2xl overflow-hidden z-50"
+          style={{ backgroundColor: t.card, border: `1px solid ${t.cardBorder}` }}
+        >
+          <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${t.divider}` }}>
+            <p className="text-sm font-bold" style={{ color: t.textPrimary }}>Notifications</p>
+            {notifications.length > 0 && (
+              <button onClick={clearAll} className="text-xs" style={{ color: t.textMuted }}>Clear all</button>
+            )}
+          </div>
+
+          <div className="overflow-y-auto" style={{ maxHeight: '360px' }}>
+            {recent.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-center" style={{ color: t.textMuted }}>No notifications</p>
+            ) : (
+              recent.map(n => (
+                <div
+                  key={n.id}
+                  className="px-4 py-3"
+                  style={{
+                    borderBottom: `1px solid ${t.divider}`,
+                    backgroundColor: n.read ? 'transparent' : 'rgba(245,158,11,0.05)',
+                  }}
+                >
+                  <p className="text-sm font-semibold" style={{ color: t.textPrimary }}>{n.title}</p>
+                  {n.body && <p className="text-xs mt-0.5" style={{ color: t.textMuted }}>{n.body}</p>}
+                  <p className="text-[10px] mt-1" style={{ color: t.textMuted }}>
+                    {new Date(n.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ThemeToggleIcon({ isDark }) {
   return isDark ? (
     // Sun icon (click to go light)
@@ -163,6 +246,9 @@ export default function AppShell({ children }) {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Notification bell */}
+          <NotificationBell />
+
           {/* Theme toggle */}
           <button
             onClick={toggleTheme}

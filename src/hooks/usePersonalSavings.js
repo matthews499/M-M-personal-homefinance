@@ -16,7 +16,8 @@ export function usePersonalSavings() {
     setLoading(true)
     const [potsRes, txRes] = await Promise.all([
       supabase.from('personal_savings_pots').select('*').eq('user_id', userId).order('name'),
-      supabase.from('personal_savings_deposits').select('*').eq('user_id', userId).order('transaction_date', { ascending: false }),
+      supabase.from('personal_savings_deposits').select('*').eq('user_id', userId)
+        .order('transaction_date', { ascending: false }),
     ])
     if (potsRes.error) setError(potsRes.error.message)
     if (txRes.error)   setError(txRes.error.message)
@@ -59,21 +60,18 @@ export function usePersonalSavings() {
   }
 
   async function addTransaction(potId, { type, amount, transaction_date, note }) {
+    // BUG FIX: derive month (first day of the transaction month) — column is NOT NULL
+    const month = transaction_date.slice(0, 7) + '-01'
     const { error } = await supabase
       .from('personal_savings_deposits')
-      .insert({ pot_id: potId, user_id: userId, type, amount, transaction_date, note })
+      .insert({ pot_id: potId, user_id: userId, type, amount, transaction_date, note, month })
     if (error) throw new Error(error.message)
     await fetch()
   }
 
   // Legacy shim
-  async function addDeposit(potId, amount, month) {
-    return addTransaction(potId, {
-      type: 'deposit',
-      amount,
-      transaction_date: month,
-      note: '',
-    })
+  async function addDeposit(potId, amount, transactionDate) {
+    return addTransaction(potId, { type: 'deposit', amount, transaction_date: transactionDate, note: '' })
   }
 
   async function removeTransaction(id) {
@@ -86,19 +84,10 @@ export function usePersonalSavings() {
   }
 
   return {
-    pots,
-    transactions,
-    deposits: transactions,
-    transactionsForPot,
-    depositsForPot,
-    loading,
-    error,
-    refetch: fetch,
-    createPot,
-    updatePot,
-    removePot,
-    addTransaction,
-    addDeposit,
-    removeTransaction,
+    pots, transactions, deposits: transactions,
+    transactionsForPot, depositsForPot,
+    loading, error, refetch: fetch,
+    createPot, updatePot, removePot,
+    addTransaction, addDeposit, removeTransaction,
   }
 }

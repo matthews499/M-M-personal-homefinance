@@ -16,7 +16,7 @@ function FieldLabel({ children }) {
 
 function ProgressBar({ pct }) {
   const capped = Math.min(pct, 100)
-  const color  = pct >= 100 ? t.red : pct >= 80 ? t.amber : t.green
+  const color  = pct >= 80 ? t.red : pct >= 50 ? t.amber : t.green
   return (
     <div className="h-1.5 rounded-full overflow-hidden mt-2.5" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
       <div className="h-full rounded-full transition-all duration-300" style={{ width: `${capped}%`, backgroundColor: color }} />
@@ -146,7 +146,7 @@ function TransactionModal({ category, transactions, onAdd, onUpdate, onDelete, o
     if (confirm('Delete this transaction?')) await onDelete(id)
   }
 
-  const barColor = pct >= 100 ? t.red : pct >= 80 ? t.amber : t.green
+  const barColor = pct >= 80 ? t.red : pct >= 50 ? t.amber : t.green
 
   return (
     <div
@@ -282,7 +282,7 @@ export default function JointVariable({ period }) {
   const totalSpent  = transactions.reduce((s, tx) => s + Number(tx.amount), 0)
   const totalLeft   = totalBudget - totalSpent
   const totalPct    = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0
-  const summaryColor = totalPct >= 100 ? t.red : totalPct >= 80 ? t.amber : t.green
+  const summaryColor = totalPct >= 80 ? t.red : totalPct >= 50 ? t.amber : t.green
 
   return (
     <>

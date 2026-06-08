@@ -2,12 +2,16 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDashboard } from '../hooks/useDashboard'
 import { useTransfers } from '../hooks/useTransfers'
+import { usePersonalSavings } from '../hooks/usePersonalSavings'
 import { currency, greeting } from '../utils/format'
 import { monthLabel, ordinal } from '../utils/dates'
 import { t, cardStyle, surfaceStyle, inputStyle } from '../utils/theme'
 import { getPeriodLabel, getCurrentPeriod } from '../utils/payCycle'
 import { TasksSection } from '../components/dashboard/TasksSection'
 import { ensureContributionTasks } from '../utils/taskGuard'
+import { checkDisposableAlerts } from '../utils/checkDisposableAlerts'
+import { checkTaskDueAlerts } from '../utils/checkTaskDueAlerts'
+import { calcSavingsMonthlyRequired, calcSavingsBalance } from '../utils/calculations'
 
 function Label({ children }) {
   return (
@@ -303,8 +307,40 @@ export default function DashboardPage() {
   const [showWhatIf,  setShowWhatIf]  = useState(false)
   const [splitLocked, setSplitLocked] = useState(() => localStorage.getItem('splitLocked') === 'true')
 
+  const { pots, transactionsForPot } = usePersonalSavings()
+
   // Must be above any early returns — hooks must always run in the same order
   useEffect(() => { ensureContributionTasks() }, [])
+
+  // Disposable alerts (my spending vs my disposable)
+  useEffect(() => {
+    if (!derived) return
+    const userId        = derived.me.user_id
+    const tNet          = transferNetForUser(period, userId)
+    const adjDisposable = derived.myDisposable + tNet
+    const savCommit     = pots.reduce((acc, pot) => {
+      if (pot.mode === 'open') return acc + Number(pot.monthly_commitment ?? 0)
+      const txns    = transactionsForPot(pot.id)
+      const balance = calcSavingsBalance(txns)
+      const target  = Number(pot.target_amount ?? 0)
+      if (balance >= target) return acc
+      return acc + calcSavingsMonthlyRequired(pot, txns)
+    }, 0)
+    const varSpent  = Number(derived.mySummary.var_spent  ?? 0)
+    const miscTotal = Number(derived.mySummary.misc_total ?? 0)
+    checkDisposableAlerts({
+      userId,
+      period,
+      disposable: adjDisposable,
+      spent: varSpent + miscTotal + savCommit,
+    })
+  }, [derived, pots, period, transferNetForUser, transactionsForPot])
+
+  // Task due alerts
+  useEffect(() => {
+    if (!derived) return
+    checkTaskDueAlerts(derived.me.user_id)
+  }, [derived])
 
   function toggleSplitLock() {
     const next = !splitLocked
@@ -335,22 +371,13 @@ export default function DashboardPage() {
     matthewDisposable, maddyDisposable,
     matthewAvailable, maddyAvailable,
     matthewContribution, maddyContribution,
-    matthewSummary, maddySummary,
   } = derived
   const surplus = jointBalance >= 0
   const period = getCurrentPeriod()
 
   // Transfer net adjustments
-  const transferNet         = transferNetForUser(period, me.user_id)
-  const matthewTransferNet  = transferNetForUser(period, matthew.user_id)
-  const maddyTransferNet    = transferNetForUser(period, maddy.user_id)
-  const adjustedDisposable  = myDisposable + transferNet
-
-  // Remaining this period for each person
-  const matthewRemaining = matthewDisposable + matthewTransferNet
-    - Number(matthewSummary.var_spent ?? 0) - Number(matthewSummary.misc_total ?? 0)
-  const maddyRemaining = maddyDisposable + maddyTransferNet
-    - Number(maddySummary.var_spent ?? 0) - Number(maddySummary.misc_total ?? 0)
+  const transferNet        = transferNetForUser(period, me.user_id)
+  const adjustedDisposable = myDisposable + transferNet
 
   // Recent transfers for this period (last 5)
   const recentTransfers = transfers.filter(tr => tr.period === period).slice(0, 5)
@@ -391,39 +418,52 @@ export default function DashboardPage() {
         {[
           { person: matthew, available: matthewAvailable, contribution: matthewContribution, disposable: matthewDisposable, isMe: isMatthew },
           { person: maddy,   available: maddyAvailable,   contribution: maddyContribution,   disposable: maddyDisposable,   isMe: !isMatthew },
-        ].map(({ person, available, contribution, disposable, isMe }) => (
-          <div
-            key={person.user_id}
-            className="rounded-2xl p-4 transition-colors active:brightness-90"
-            style={{ ...cardStyle, cursor: isMe ? 'pointer' : 'default' }}
-            onClick={isMe ? () => setEditProfile(true) : undefined}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: t.textMuted }}>{person.name}</p>
-              {isMe && (
-                <svg className="w-3.5 h-3.5" style={{ color: t.textMuted }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a4 4 0 01-1.414.828l-3 1 1-3a4 4 0 01.828-1.414z" />
-                </svg>
-              )}
-            </div>
+        ].map(({ person, available, contribution, disposable, isMe }) => {
+          const personalFixed   = Number(person.personal_fixed_total ?? 0)
+          const contribPct      = derived.totalAvailable > 0 ? Math.round((contribution / derived.totalAvailable) * 100) : 0
+          const dispPct         = derived.totalDisposable > 0 ? Math.round((disposable / derived.totalDisposable) * 100) : 0
+          return (
+            <div
+              key={person.user_id}
+              className="rounded-2xl p-4 transition-colors active:brightness-90"
+              style={{ ...cardStyle, cursor: isMe ? 'pointer' : 'default' }}
+              onClick={isMe ? () => setEditProfile(true) : undefined}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-bold uppercase tracking-widest" style={{ color: t.textMuted }}>{person.name}</p>
+                {isMe && (
+                  <svg className="w-3.5 h-3.5" style={{ color: t.textMuted }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a4 4 0 01-1.414.828l-3 1 1-3a4 4 0 01.828-1.414z" />
+                  </svg>
+                )}
+              </div>
 
-            <div className="space-y-2.5" style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '10px' }}>
-              <div>
-                <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Available</p>
-                <p className="text-base font-bold tabular-nums" style={{ color: t.textPrimary }}>{currency(available)}</p>
-                <p className="text-[10px] mt-0.5" style={{ color: t.textMuted }}>salary − personal fixed</p>
-              </div>
-              <div style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '8px' }}>
-                <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Contribution</p>
-                <p className="text-sm font-bold tabular-nums" style={{ color: contribution >= 0 ? t.textPrimary : t.red }}>{currency(contribution)}</p>
-              </div>
-              <div style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '8px' }}>
-                <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Disposable</p>
-                <p className="text-sm font-bold tabular-nums" style={{ color: t.green }}>{currency(disposable)}</p>
+              <div className="space-y-2.5" style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '10px' }}>
+                <div>
+                  <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Salary</p>
+                  <p className="text-base font-bold tabular-nums" style={{ color: t.textPrimary }}>{currency(Number(person.salary))}</p>
+                </div>
+                {personalFixed > 0 && (
+                  <div style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '8px' }}>
+                    <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Personal fixed</p>
+                    <p className="text-sm font-bold tabular-nums" style={{ color: t.red }}>−{currency(personalFixed)}</p>
+                  </div>
+                )}
+                <div style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '8px' }}>
+                  <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Contribution</p>
+                  <p className="text-sm font-bold tabular-nums" style={{ color: contribution >= 0 ? t.textPrimary : t.red }}>{currency(contribution)}</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: t.textMuted }}>{contribPct}% of combined available</p>
+                  <p className="text-[10px]" style={{ color: t.textMuted }}>after personal expenses</p>
+                </div>
+                <div style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '8px' }}>
+                  <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Disposable</p>
+                  <p className="text-sm font-bold tabular-nums" style={{ color: t.green }}>{currency(disposable)}</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: t.textMuted }}>{dispPct}% of total disposable</p>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* ── Joint pot ── */}
@@ -450,24 +490,58 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Remaining this period ── */}
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          { label: 'Matthew', remaining: matthewRemaining },
-          { label: 'Maddy',   remaining: maddyRemaining   },
-        ].map(({ label, remaining }) => (
-          <div key={label} className="rounded-2xl p-4" style={cardStyle}>
-            <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: t.textMuted }}>{label}</p>
-            <p
-              className="text-2xl font-bold tabular-nums"
-              style={{ color: remaining >= 0 ? t.green : t.red }}
-            >
-              {currency(remaining)}
+      {/* ── My remaining this period ── */}
+      {(() => {
+        const myRemaining = adjustedDisposable
+          - Number(derived.mySummary.var_spent  ?? 0)
+          - Number(derived.mySummary.misc_total ?? 0)
+        const myPct = adjustedDisposable > 0
+          ? Math.min(
+              ((adjustedDisposable - myRemaining) / adjustedDisposable) * 100,
+              100
+            )
+          : 0
+        const positiveRem = myRemaining >= 0
+        const barColor    = myPct >= 80 ? t.red : myPct >= 50 ? t.amber : t.green
+        return (
+          <div
+            className="rounded-2xl p-4 space-y-2"
+            style={{
+              backgroundColor: positiveRem ? 'rgba(52,211,153,0.08)' : 'rgba(244,63,94,0.08)',
+              border: `1px solid ${positiveRem ? 'rgba(52,211,153,0.20)' : 'rgba(244,63,94,0.20)'}`,
+            }}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: positiveRem ? t.green : t.red }}>
+                  Your remaining
+                </p>
+                <p className="text-3xl font-bold tabular-nums" style={{ color: positiveRem ? t.green : t.red }}>
+                  {currency(myRemaining)}
+                </p>
+              </div>
+              <div className="text-right mt-1">
+                <p className="text-2xl font-bold tabular-nums" style={{ color: myPct >= 80 ? t.red : myPct >= 50 ? t.amber : t.textMuted }}>
+                  {Math.round(myPct)}%
+                </p>
+                <p className="text-[10px]" style={{ color: t.textMuted }}>of disposable spent</p>
+              </div>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(128,128,128,0.15)' }}>
+              <div className="h-full rounded-full transition-all" style={{ width: `${myPct}%`, backgroundColor: barColor }} />
+            </div>
+            <p className="text-xs" style={{ color: t.textMuted }}>
+              Disposable{' '}
+              <span className="font-semibold" style={{ color: t.textSecondary }}>{currency(adjustedDisposable)}</span>
+              {transferNet !== 0 && (
+                <span style={{ color: transferNet > 0 ? t.green : t.red }}>
+                  {transferNet > 0 ? ` · +${currency(transferNet)}` : ` · −${currency(Math.abs(transferNet))}`} transfers
+                </span>
+              )}
             </p>
-            <p className="text-[10px] mt-1" style={{ color: t.textMuted }}>remaining this period</p>
           </div>
-        ))}
-      </div>
+        )
+      })()}
 
       {/* ── Tasks ── */}
       <TasksSection />

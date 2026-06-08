@@ -19,7 +19,7 @@ export function useTasks() {
     // Fetch all tasks (both users — both can see both) ordered by creation
     const { data } = await supabase
       .from('tasks')
-      .select('*, user:user_id(name)')
+      .select('*, user:profiles!user_id(name)')
       .order('created_at', { ascending: true })
     setTasks(data ?? [])
     setLoading(false)

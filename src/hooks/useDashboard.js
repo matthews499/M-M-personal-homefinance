@@ -47,6 +47,11 @@ export function useDashboard() {
   useEffect(() => { fetchContribs() }, [fetchContribs])
   useEffect(() => { fetchPersonalSummaries() }, [fetchPersonalSummaries])
 
+  // Re-fetch contributions when split ratio changes (broadcast from useAppSettings)
+  useEffect(() => {
+    return listenFor('app-settings', fetchContribs)
+  }, [fetchContribs])
+
   // Re-fetch personal summaries when personal spending changes
   useEffect(() => {
     const unsubMisc = listenFor('personal-misc', fetchPersonalSummaries)
@@ -85,7 +90,10 @@ export function useDashboard() {
     )
     const varBudget = jointCategories.reduce((acc, c) => acc + Number(c.monthly_budget), 0)
     const miscThisMonth = sumAmount(
-      jointMiscItems.filter(i => i.expense_date >= periodStart && i.expense_date <= periodEnd)
+      jointMiscItems.filter(i =>
+        i.expense_date >= periodStart && i.expense_date <= periodEnd &&
+        i.deduction_type !== 'variable'  // already counted in var spending — avoid double-counting
+      )
     )
 
     // ── Core figures from updated RPC ─────────────────────────
