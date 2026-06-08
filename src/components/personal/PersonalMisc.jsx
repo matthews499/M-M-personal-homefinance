@@ -1,9 +1,9 @@
 ﻿import { useState } from 'react'
 import { usePersonalMisc } from '../../hooks/usePersonalMisc'
 import { currency } from '../../utils/format'
-import { monthParam } from '../../utils/dates'
 import { sumAmount } from '../../utils/calculations'
 import { t, cardStyle, inputStyle } from '../../utils/theme'
+import { getCurrentPeriod, getPeriodDateRange } from '../../utils/payCycle'
 
 function SectionLabel({ children }) {
   return <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: t.textMuted }}>{children}</p>
@@ -65,13 +65,14 @@ function MiscModal({ item, onSave, onCancel }) {
   )
 }
 
-export default function PersonalMisc() {
-  const month = monthParam()
-  const { items, loading, miscForMonth, create, update, remove } = usePersonalMisc()
+export default function PersonalMisc({ period }) {
+  const activePeriod = period ?? getCurrentPeriod()
+  const { start, end } = getPeriodDateRange(activePeriod)
+  const { items, loading, create, update, remove } = usePersonalMisc()
   const [adding,      setAdding]      = useState(false)
   const [editingItem, setEditingItem] = useState(null)
 
-  const monthItems = miscForMonth(month)
+  const monthItems = items.filter(i => i.expense_date >= start && i.expense_date <= end)
   const total      = sumAmount(monthItems)
 
   async function handleCreate(fields) { await create(fields); setAdding(false) }
@@ -103,7 +104,7 @@ export default function PersonalMisc() {
         </div>
 
         {monthItems.length === 0 && (
-          <p className="text-sm py-1" style={{ color: t.textMuted }}>No miscellaneous expenses this month.</p>
+          <p className="text-sm py-1" style={{ color: t.textMuted }}>No miscellaneous expenses this period.</p>
         )}
 
         <div className="space-y-0">
@@ -128,7 +129,7 @@ export default function PersonalMisc() {
 
         {monthItems.length > 0 && (
           <div className="flex justify-between items-center pt-1">
-            <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: t.textMuted }}>This month</span>
+            <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: t.textMuted }}>This period</span>
             <span className="text-xl font-bold tabular-nums" style={{ color: t.textPrimary }}>{currency(total)}</span>
           </div>
         )}

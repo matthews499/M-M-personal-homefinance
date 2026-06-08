@@ -1,12 +1,14 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { monthParam } from '../utils/dates'
 import { calcBudgetProgress } from '../utils/calculations'
 import { broadcast, listenFor } from '../utils/broadcast'
+import { getCurrentPeriod, getPeriodDateRange } from '../utils/payCycle'
 
 const KEY = 'joint-variable'
 
-export function useJointVariable(month = monthParam()) {
+export function useJointVariable(period = getCurrentPeriod()) {
+  const { start, end } = getPeriodDateRange(period)
+
   const [categories, setCategories]     = useState([])
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading]           = useState(true)
@@ -22,20 +24,15 @@ export function useJointVariable(month = monthParam()) {
   }, [])
 
   const fetchTransactions = useCallback(async () => {
-    const [year, mon] = month.slice(0, 7).split('-').map(Number)
-    const nextYear  = mon === 12 ? year + 1 : year
-    const nextMonth = mon === 12 ? 1 : mon + 1
-    const to = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`
-
     const { data, error } = await supabase
       .from('joint_transactions')
       .select('*')
-      .gte('transaction_date', month)
-      .lt('transaction_date', to)
+      .gte('transaction_date', start)
+      .lte('transaction_date', end)
       .order('transaction_date', { ascending: false })
     if (error) throw new Error(error.message)
     return data
-  }, [month])
+  }, [start, end])
 
   const fetch = useCallback(async () => {
     setLoading(true)
@@ -101,8 +98,8 @@ export function useJointVariable(month = monthParam()) {
     const cat = cats.find(c => c.id === categoryId)
     if (cat) {
       const catTxns = txns.filter(tx => tx.category_id === cat.id)
-      const { pct, spent, budget } = calcBudgetProgress(cat, catTxns, month)
-      if (pct >= 80 && cat.notification_sent_month !== month) {
+      const { pct, spent, budget } = calcBudgetProgress(cat, catTxns, start)
+      if (pct >= 80 && cat.notification_sent_month !== period) {
         await trigger80PctAlert(cat, spent, budget)
       }
     }
@@ -131,11 +128,11 @@ export function useJointVariable(month = monthParam()) {
   async function trigger80PctAlert(category, amountSpent, budget) {
     await supabase
       .from('joint_variable_categories')
-      .update({ notification_sent_month: month })
+      .update({ notification_sent_month: period })
       .eq('id', category.id)
 
     await supabase.functions.invoke('send-budget-alert', {
-      body: { type: 'joint', categoryId: category.id, categoryName: category.name, amountSpent, budget, month },
+      body: { type: 'joint', categoryId: category.id, categoryName: category.name, amountSpent, budget, month: period },
     }).catch(() => {})
 
     await fetch()

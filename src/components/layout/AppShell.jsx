@@ -1,8 +1,17 @@
-﻿import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../../lib/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { t, inputStyle } from '../../utils/theme'
+
+// ── Theme helpers ────────────────────────────────────────────────
+
+function initTheme() {
+  const stored = localStorage.getItem('theme') ?? 'dark'
+  if (stored === 'light') document.documentElement.classList.add('light')
+  else document.documentElement.classList.remove('light')
+  return stored
+}
 
 function ChangePasswordModal({ onClose }) {
   const [password,  setPassword]  = useState('')
@@ -25,7 +34,7 @@ function ChangePasswordModal({ onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }} onClick={onClose}>
       <div className="w-full md:max-w-sm rounded-t-3xl md:rounded-2xl p-6 pb-10 md:pb-6 space-y-4" style={{ backgroundColor: t.card, border: `1px solid ${t.cardBorder}` }} onClick={e => e.stopPropagation()}>
-        <div className="w-10 h-1 rounded-full mx-auto mb-2 md:hidden" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }} />
+        <div className="w-10 h-1 rounded-full mx-auto mb-2 md:hidden" style={{ backgroundColor: 'rgba(128,128,128,0.3)' }} />
         <h2 className="text-base font-bold" style={{ color: t.textPrimary }}>Change password</h2>
 
         {success ? (
@@ -39,29 +48,15 @@ function ChangePasswordModal({ onClose }) {
           <>
             <div>
               <p className="text-xs font-medium uppercase tracking-widest mb-1.5" style={{ color: t.textMuted }}>New password</p>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                autoFocus
-                className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500"
-                style={inputStyle}
-              />
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoFocus className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
             </div>
             <div>
               <p className="text-xs font-medium uppercase tracking-widest mb-1.5" style={{ color: t.textMuted }}>Confirm password</p>
-              <input
-                type="password"
-                value={confirm}
-                onChange={e => setConfirm(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSave()}
-                className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500"
-                style={inputStyle}
-              />
+              <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSave()} className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
             </div>
             {err && <p className="text-xs px-3 py-2.5 rounded-xl" style={{ backgroundColor: t.redDim, color: t.red }}>{err}</p>}
             <div className="flex gap-2 pt-1">
-              <button onClick={onClose} className="flex-1 py-3 rounded-xl text-sm font-medium" style={{ backgroundColor: 'rgba(255,255,255,0.07)', color: t.textSecondary }}>Cancel</button>
+              <button onClick={onClose} className="flex-1 py-3 rounded-xl text-sm font-medium" style={{ backgroundColor: 'var(--color-pill-bg)', color: t.textSecondary }}>Cancel</button>
               <button onClick={handleSave} disabled={saving} className="flex-1 py-3 rounded-xl text-sm font-semibold disabled:opacity-50" style={{ backgroundColor: t.purple, color: '#fff' }}>
                 {saving ? 'Saving…' : 'Update'}
               </button>
@@ -73,7 +68,7 @@ function ChangePasswordModal({ onClose }) {
   )
 }
 
-// Nav icons
+// ── Nav icons ────────────────────────────────────────────────────
 function HomeIcon({ active }) {
   return (
     <svg className="w-5 h-5 mb-0.5" fill={active ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={active ? 0 : 1.8}>
@@ -96,10 +91,21 @@ function PersonalIcon({ active }) {
   )
 }
 
-const NAV_ICONS = {
-  '/':         HomeIcon,
-  '/joint':    JointIcon,
-  '/personal': PersonalIcon,
+const NAV_ICONS = { '/': HomeIcon, '/joint': JointIcon, '/personal': PersonalIcon }
+
+// ── Theme toggle icon ────────────────────────────────────────────
+function ThemeToggleIcon({ isDark }) {
+  return isDark ? (
+    // Sun icon (click to go light)
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M12 7a5 5 0 110 10A5 5 0 0112 7z" />
+    </svg>
+  ) : (
+    // Moon icon (click to go dark)
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+    </svg>
+  )
 }
 
 export default function AppShell({ children }) {
@@ -107,7 +113,18 @@ export default function AppShell({ children }) {
   const navigate  = useNavigate()
   const location  = useLocation()
   const [changingPassword, setChangingPassword] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [theme, setTheme] = useState(() => initTheme())
+
+  // Apply theme on mount in case localStorage has a value
+  useEffect(() => { initTheme() }, [])
+
+  function toggleTheme() {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
+    localStorage.setItem('theme', next)
+    if (next === 'light') document.documentElement.classList.add('light')
+    else document.documentElement.classList.remove('light')
+  }
 
   const navItems = [
     { label: 'Home',     path: '/' },
@@ -134,7 +151,7 @@ export default function AppShell({ children }) {
                   onClick={() => navigate(item.path)}
                   className="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
                   style={{
-                    backgroundColor: active ? 'rgba(255,255,255,0.08)' : 'transparent',
+                    backgroundColor: active ? 'rgba(128,128,128,0.12)' : 'transparent',
                     color: active ? t.textPrimary : t.textMuted,
                   }}
                 >
@@ -146,6 +163,16 @@ export default function AppShell({ children }) {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Theme toggle */}
+          <button
+            onClick={toggleTheme}
+            className="p-2 rounded-lg transition-colors"
+            style={{ color: t.textMuted }}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            <ThemeToggleIcon isDark={theme === 'dark'} />
+          </button>
+
           {profile && (
             <button
               onClick={() => setChangingPassword(true)}
@@ -159,7 +186,7 @@ export default function AppShell({ children }) {
           <button
             onClick={signOut}
             className="hidden md:block text-xs px-3 py-1.5 rounded-lg font-medium transition-colors"
-            style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: t.textMuted }}
+            style={{ backgroundColor: 'var(--color-pill-bg)', color: t.textMuted }}
           >
             Sign out
           </button>
@@ -203,7 +230,7 @@ export default function AppShell({ children }) {
         })}
       </nav>
 
-      {/* Page content — extra bottom padding on mobile for tab bar */}
+      {/* Page content */}
       <main className="max-w-2xl mx-auto px-4 md:px-6 py-5 pb-28 md:pb-10">
         {children}
       </main>

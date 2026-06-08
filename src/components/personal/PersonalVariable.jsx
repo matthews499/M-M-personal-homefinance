@@ -1,9 +1,9 @@
 ﻿import { useState } from 'react'
 import { usePersonalVariable } from '../../hooks/usePersonalVariable'
 import { currency } from '../../utils/format'
-import { monthParam } from '../../utils/dates'
 import { calcBudgetProgress } from '../../utils/calculations'
 import { t, cardStyle, surfaceStyle, inputStyle } from '../../utils/theme'
+import { getCurrentPeriod } from '../../utils/payCycle'
 
 function SectionLabel({ children }) {
   return <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: t.textMuted }}>{children}</p>
@@ -192,14 +192,14 @@ function TxForm({ item, onSave, onCancel }) {
 
 // ── Main component ─────────────────────────────────────────────
 
-export default function PersonalVariable() {
-  const month = monthParam()
+export default function PersonalVariable({ period }) {
+  const activePeriod = period ?? getCurrentPeriod()
 
   const {
     categories, transactions, loading,
     createCategory, updateCategory, removeCategory,
     addTransaction, updateTransaction, removeTransaction,
-  } = usePersonalVariable(month)
+  } = usePersonalVariable(activePeriod)
 
   const [adding,    setAdding]    = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -242,8 +242,11 @@ export default function PersonalVariable() {
           )}
 
           {categories.map(cat => {
-            const catTxns = transactions.filter(tx => tx.category_id === cat.id)
-            const { spent, budget, remaining, pct } = calcBudgetProgress(cat, catTxns, month)
+            const catTxns  = transactions.filter(tx => tx.category_id === cat.id)
+            const spent    = catTxns.reduce((s, tx) => s + Number(tx.amount), 0)
+            const budget   = Number(cat.monthly_budget)
+            const remaining = budget - spent
+            const pct      = budget > 0 ? Math.round((spent / budget) * 100) : 0
             const warn = pct >= 80
             const over = pct >= 100
 

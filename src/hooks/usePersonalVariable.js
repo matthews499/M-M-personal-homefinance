@@ -1,15 +1,16 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
-import { monthParam } from '../utils/dates'
 import { calcBudgetProgress } from '../utils/calculations'
 import { broadcast, listenFor } from '../utils/broadcast'
+import { getCurrentPeriod, getPeriodDateRange } from '../utils/payCycle'
 
 const KEY = 'personal-variable'
 
-export function usePersonalVariable(month = monthParam()) {
+export function usePersonalVariable(period = getCurrentPeriod()) {
   const { session } = useAuth()
   const userId = session?.user?.id
+  const { start, end } = getPeriodDateRange(period)
 
   const [categories, setCategories]     = useState([])
   const [transactions, setTransactions] = useState([])
@@ -27,21 +28,16 @@ export function usePersonalVariable(month = monthParam()) {
   }, [userId])
 
   const fetchTransactions = useCallback(async () => {
-    const [year, mon] = month.slice(0, 7).split('-').map(Number)
-    const nextYear  = mon === 12 ? year + 1 : year
-    const nextMonth = mon === 12 ? 1 : mon + 1
-    const to = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`
-
     const { data, error } = await supabase
       .from('personal_transactions')
       .select('*')
       .eq('user_id', userId)
-      .gte('transaction_date', month)
-      .lt('transaction_date', to)
+      .gte('transaction_date', start)
+      .lte('transaction_date', end)
       .order('transaction_date', { ascending: false })
     if (error) throw new Error(error.message)
     return data
-  }, [userId, month])
+  }, [userId, start, end])
 
   const fetch = useCallback(async () => {
     if (!userId) return
@@ -107,8 +103,8 @@ export function usePersonalVariable(month = monthParam()) {
     const cat = cats.find(c => c.id === categoryId)
     if (cat) {
       const catTxns = txns.filter(tx => tx.category_id === cat.id)
-      const { pct, spent, budget } = calcBudgetProgress(cat, catTxns, month)
-      if (pct >= 80 && cat.notification_sent_month !== month) {
+      const { pct, spent, budget } = calcBudgetProgress(cat, catTxns, start)
+      if (pct >= 80 && cat.notification_sent_month !== period) {
         await trigger80PctAlert(cat, spent, budget)
       }
     }
@@ -132,16 +128,14 @@ export function usePersonalVariable(month = monthParam()) {
     await fetch()
   }
 
-  // ── 80% alert ───────────────────────────────────────────────
-
   async function trigger80PctAlert(category, amountSpent, budget) {
     await supabase
       .from('personal_variable_categories')
-      .update({ notification_sent_month: month })
+      .update({ notification_sent_month: period })
       .eq('id', category.id)
 
     await supabase.functions.invoke('send-budget-alert', {
-      body: { type: 'personal', userId, categoryId: category.id, categoryName: category.name, amountSpent, budget, month },
+      body: { type: 'personal', userId, categoryId: category.id, categoryName: category.name, amountSpent, budget, month: period },
     }).catch(() => {})
 
     await fetch()

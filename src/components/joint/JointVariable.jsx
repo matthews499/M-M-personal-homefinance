@@ -2,9 +2,9 @@
 import { useAuth } from '../../lib/AuthContext'
 import { useJointVariable } from '../../hooks/useJointVariable'
 import { currency } from '../../utils/format'
-import { monthParam } from '../../utils/dates'
 import { calcBudgetProgress, transactionsForMonth } from '../../utils/calculations'
 import { t, cardStyle, surfaceStyle, inputStyle } from '../../utils/theme'
+import { getCurrentPeriod } from '../../utils/payCycle'
 
 function SectionLabel({ children }) {
   return <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: t.textMuted }}>{children}</p>
@@ -111,9 +111,12 @@ function CategoryModal({ item, onSave, onCancel }) {
 // ── Transaction modal ──────────────────────────────────────────
 
 function TransactionModal({ category, transactions, onAdd, onUpdate, onDelete, onClose }) {
-  const month     = monthParam()
-  const monthTxns = transactionsForMonth(transactions, month)
-  const { spent, budget, remaining, pct } = calcBudgetProgress(category, transactions, month)
+  // transactions are already period-filtered by the hook
+  const monthTxns = transactions
+  const spent     = transactions.reduce((s, tx) => s + Number(tx.amount), 0)
+  const budget    = Number(category.monthly_budget)
+  const remaining = budget - spent
+  const pct       = budget > 0 ? Math.round((spent / budget) * 100) : 0
 
   const [showForm, setShowForm] = useState(false)
   const [editId,   setEditId]   = useState(null)
@@ -242,16 +245,16 @@ function TransactionModal({ category, transactions, onAdd, onUpdate, onDelete, o
 
 // ── Main component ─────────────────────────────────────────────
 
-export default function JointVariable() {
+export default function JointVariable({ period }) {
   const { session } = useAuth()
   const userId = session?.user?.id
-  const month  = monthParam()
+  const activePeriod = period ?? getCurrentPeriod()
 
   const {
     categories, transactions, loading,
     createCategory, updateCategory, removeCategory,
     addTransaction, updateTransaction, removeTransaction,
-  } = useJointVariable(month)
+  } = useJointVariable(activePeriod)
 
   const [adding,    setAdding]    = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -297,7 +300,10 @@ export default function JointVariable() {
 
           {categories.map(cat => {
             const catTxns = transactions.filter(tx => tx.category_id === cat.id)
-            const { spent, budget, remaining, pct } = calcBudgetProgress(cat, catTxns, month)
+            const spent    = catTxns.reduce((s, tx) => s + Number(tx.amount), 0)
+            const budget   = Number(cat.monthly_budget)
+            const remaining = budget - spent
+            const pct      = budget > 0 ? Math.round((spent / budget) * 100) : 0
             const warn = pct >= 80
             const over = pct >= 100
 

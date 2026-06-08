@@ -5,8 +5,8 @@ import { useJointFixed } from './useJointFixed'
 import { useJointVariable } from './useJointVariable'
 import { useJointMisc } from './useJointMisc'
 import { useAuth } from '../lib/AuthContext'
-import { monthParam } from '../utils/dates'
 import { calcDisposable, sumAmount } from '../utils/calculations'
+import { getCurrentPeriod, getPeriodDateRange } from '../utils/payCycle'
 
 export function useDashboard() {
   const { profile: currentProfile, session } = useAuth()
@@ -37,7 +37,8 @@ export function useDashboard() {
 
   const loading = sLoad || jfLoad || jvLoad || miscLoad || cLoading
 
-  const month = monthParam()
+  const currentPeriod = getCurrentPeriod()
+  const { start: periodStart, end: periodEnd } = getPeriodDateRange(currentPeriod)
 
   const derived = useMemo(() => {
     if (loading || !contribs.length || !settings || !currentProfile) return null
@@ -53,7 +54,7 @@ export function useDashboard() {
     const totalIn       = Number(matthew.contribution) + Number(maddy.contribution)
     const fixedTotal    = sumAmount(jointFixed)
     const varBudget     = jointCategories.reduce((acc, c) => acc + Number(c.monthly_budget), 0)
-    const miscThisMonth = sumAmount(jointMiscItems.filter(i => i.expense_date.startsWith(month.slice(0, 7))))
+    const miscThisMonth = sumAmount(jointMiscItems.filter(i => i.expense_date >= periodStart && i.expense_date <= periodEnd))
     const jointBalance  = totalIn - fixedTotal - varBudget - miscThisMonth
 
     const ratio         = settings.matthew_split_ratio
@@ -75,9 +76,8 @@ export function useDashboard() {
       matthewRatio: Number(ratio),
       maddyRatio: 1 - Number(ratio),
       jointFixed,
-      month,
     }
-  }, [loading, contribs, settings, currentProfile, jointFixed, jointCategories, jointMiscItems, month])
+  }, [loading, contribs, settings, currentProfile, jointFixed, jointCategories, jointMiscItems, periodStart, periodEnd])
 
   return {
     derived,

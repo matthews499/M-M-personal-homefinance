@@ -2,15 +2,17 @@ import { useDashboard } from '../../hooks/useDashboard'
 import { usePersonalVariable } from '../../hooks/usePersonalVariable'
 import { usePersonalMisc } from '../../hooks/usePersonalMisc'
 import { currency } from '../../utils/format'
-import { monthParam } from '../../utils/dates'
 import { sumAmount } from '../../utils/calculations'
 import { t } from '../../utils/theme'
+import { getCurrentPeriod, getPeriodDateRange } from '../../utils/payCycle'
 
-export default function PersonalRemaining() {
-  const month = monthParam()
+export default function PersonalRemaining({ period }) {
+  const activePeriod = period ?? getCurrentPeriod()
+  const { start, end } = getPeriodDateRange(activePeriod)
+
   const { derived, loading: dashLoading } = useDashboard()
-  const { categories, loading: varLoading } = usePersonalVariable(month)
-  const { miscForMonth, loading: miscLoading } = usePersonalMisc()
+  const { categories, loading: varLoading } = usePersonalVariable()
+  const { items: miscItems, loading: miscLoading } = usePersonalMisc()
 
   const loading = dashLoading || varLoading || miscLoading
 
@@ -22,10 +24,10 @@ export default function PersonalRemaining() {
     )
   }
 
-  const varBudget  = categories.reduce((acc, c) => acc + Number(c.monthly_budget), 0)
-  const miscTotal  = sumAmount(miscForMonth(month))
-  const remaining  = derived.myDisposable - varBudget - miscTotal
-  const positive   = remaining >= 0
+  const varBudget = categories.reduce((acc, c) => acc + Number(c.monthly_budget), 0)
+  const miscTotal = sumAmount(miscItems.filter(i => i.expense_date >= start && i.expense_date <= end))
+  const remaining = derived.myDisposable - varBudget - miscTotal
+  const positive  = remaining >= 0
 
   return (
     <div
@@ -36,7 +38,7 @@ export default function PersonalRemaining() {
       }}
     >
       <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: positive ? t.green : t.red }}>
-        Remaining this month
+        Remaining this period
       </p>
       <p className="text-3xl font-bold tracking-tight tabular-nums" style={{ color: positive ? t.green : t.red }}>
         {currency(remaining)}
@@ -44,7 +46,7 @@ export default function PersonalRemaining() {
       <div className="flex gap-4 mt-2.5 flex-wrap">
         <span className="text-xs" style={{ color: t.textMuted }}>Disposable <span className="font-semibold" style={{ color: t.textSecondary }}>{currency(derived.myDisposable)}</span></span>
         <span className="text-xs" style={{ color: t.textMuted }}>Var budget <span className="font-semibold" style={{ color: t.textSecondary }}>−{currency(varBudget)}</span></span>
-        <span className="text-xs" style={{ color: t.textMuted }}>Misc <span className="font-semibold" style={{ color: t.textSecondary }}>−{currency(miscTotal)}</span></span>
+        {miscTotal > 0 && <span className="text-xs" style={{ color: t.textMuted }}>Misc <span className="font-semibold" style={{ color: t.textSecondary }}>−{currency(miscTotal)}</span></span>}
       </div>
     </div>
   )
