@@ -15,10 +15,13 @@ export function monthLabel(date = new Date()) {
 }
 
 // How many whole months remain from today until targetDate (minimum 1)
+// Guards against null / undefined / invalid dates — Math.max(NaN, 1) === NaN
+// in JavaScript so we must check explicitly.
 export function monthsUntil(targetDate) {
+  if (!targetDate) return 1
   const target = typeof targetDate === 'string' ? parseISO(targetDate) : targetDate
   const diff = differenceInCalendarMonths(target, currentMonthStart())
-  return Math.max(diff, 1)
+  return isNaN(diff) ? 1 : Math.max(diff, 1)
 }
 
 // Ordinal suffix: 1 → "1st", 26 → "26th"

@@ -14,16 +14,21 @@ export function usePersonalSavings() {
   const fetch = useCallback(async () => {
     if (!userId) return
     setLoading(true)
-    const [potsRes, txRes] = await Promise.all([
-      supabase.from('personal_savings_pots').select('*').eq('user_id', userId).order('name'),
-      supabase.from('personal_savings_deposits').select('*').eq('user_id', userId)
-        .order('transaction_date', { ascending: false }),
-    ])
-    if (potsRes.error) setError(potsRes.error.message)
-    if (txRes.error)   setError(txRes.error.message)
-    setPots(potsRes.data ?? [])
-    setTransactions(txRes.data ?? [])
-    setLoading(false)
+    try {
+      const [potsRes, txRes] = await Promise.all([
+        supabase.from('personal_savings_pots').select('*').eq('user_id', userId).order('name'),
+        supabase.from('personal_savings_deposits').select('*').eq('user_id', userId)
+          .order('transaction_date', { ascending: false }),
+      ])
+      if (potsRes.error) setError(potsRes.error.message)
+      if (txRes.error)   setError(txRes.error.message)
+      setPots(potsRes.data ?? [])
+      setTransactions(txRes.data ?? [])
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
   }, [userId])
 
   useEffect(() => { fetch() }, [fetch])

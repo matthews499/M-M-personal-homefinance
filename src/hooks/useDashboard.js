@@ -91,8 +91,9 @@ export function useDashboard() {
     const varBudget = jointCategories.reduce((acc, c) => acc + Number(c.monthly_budget), 0)
     const miscThisMonth = sumAmount(
       jointMiscItems.filter(i =>
-        i.expense_date >= periodStart && i.expense_date <= periodEnd &&
-        i.deduction_type !== 'variable'  // already counted in var spending — avoid double-counting
+        i.expense_date >= periodStart && i.expense_date <= periodEnd
+        // include all misc: variable misc is no longer in joint_transactions (fixed in
+        // useJointMisc), and personal misc is tracked via tasks for repayment
       )
     )
 

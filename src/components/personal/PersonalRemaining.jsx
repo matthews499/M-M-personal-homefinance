@@ -1,26 +1,22 @@
 import { useEffect } from 'react'
 import { useDashboard } from '../../hooks/useDashboard'
-import { usePersonalVariable } from '../../hooks/usePersonalVariable'
-import { usePersonalMisc } from '../../hooks/usePersonalMisc'
 import { usePersonalSavings } from '../../hooks/usePersonalSavings'
 import { useTransfers } from '../../hooks/useTransfers'
 import { currency } from '../../utils/format'
-import { sumAmount, calcSavingsMonthlyRequired, calcSavingsBalance } from '../../utils/calculations'
+import { calcSavingsMonthlyRequired, calcSavingsBalance } from '../../utils/calculations'
 import { checkDisposableAlerts } from '../../utils/checkDisposableAlerts'
 import { t } from '../../utils/theme'
-import { getCurrentPeriod, getPeriodDateRange } from '../../utils/payCycle'
+import { getCurrentPeriod } from '../../utils/payCycle'
 
 export default function PersonalRemaining({ period }) {
   const activePeriod = period ?? getCurrentPeriod()
-  const { start, end } = getPeriodDateRange(activePeriod)
 
-  const { derived, loading: dashLoading }          = useDashboard()
-  const { categories, loading: varLoading }        = usePersonalVariable()
-  const { items: miscItems, loading: miscLoading } = usePersonalMisc()
+  const { derived, loading: dashLoading, psLoading }           = useDashboard()
   const { pots, transactionsForPot, loading: savLoading } = usePersonalSavings()
-  const { transferNetForUser }                     = useTransfers()
+  const { transferNetForUser }                            = useTransfers()
 
-  const loading = dashLoading || varLoading || miscLoading || savLoading
+  // Wait for both main data and personal summaries (var_spent / misc_total)
+  const loading = dashLoading || psLoading || savLoading
 
   // Monthly savings commitment across all pots
   const savingsCommitment = pots.reduce((acc, pot) => {
@@ -35,23 +31,22 @@ export default function PersonalRemaining({ period }) {
     return acc + calcSavingsMonthlyRequired(pot, txns)
   }, 0)
 
-  const userId = derived?.me?.user_id
-
   // Fire disposable alerts (safe to call every render — dedup_key prevents duplicates)
+  // Uses actual var_spent from derived.mySummary (not the budget allocation).
   useEffect(() => {
     if (!derived || loading) return
-    const transferNet       = transferNetForUser(activePeriod, derived.me.user_id)
+    const transferNet        = transferNetForUser(activePeriod, derived.me.user_id)
     const adjustedDisposable = derived.myDisposable + transferNet
-    const varBudget         = categories.reduce((acc, c) => acc + Number(c.monthly_budget), 0)
-    const miscTotal         = sumAmount(miscItems.filter(i => i.expense_date >= start && i.expense_date <= end))
-    const spent             = varBudget + miscTotal + savingsCommitment
+    const varSpent           = Number(derived.mySummary.var_spent  ?? 0)
+    const miscTotal          = Number(derived.mySummary.misc_total ?? 0)
+    const spent              = varSpent + miscTotal + savingsCommitment
     checkDisposableAlerts({
       userId:     derived.me.user_id,
       period:     activePeriod,
       disposable: adjustedDisposable,
       spent,
     })
-  }, [derived, loading, categories, miscItems, savingsCommitment, activePeriod, start, end, transferNetForUser])
+  }, [derived, loading, savingsCommitment, activePeriod, transferNetForUser])
 
   if (loading || !derived) {
     return (
@@ -64,10 +59,11 @@ export default function PersonalRemaining({ period }) {
   const transferNet        = transferNetForUser(activePeriod, derived.me.user_id)
   const adjustedDisposable = derived.myDisposable + transferNet
 
-  const varBudget = categories.reduce((acc, c) => acc + Number(c.monthly_budget), 0)
-  const miscTotal = sumAmount(miscItems.filter(i => i.expense_date >= start && i.expense_date <= end))
+  // Use actual spending from the RPC summary, not budget allocation
+  const varSpent  = Number(derived.mySummary.var_spent  ?? 0)
+  const miscTotal = Number(derived.mySummary.misc_total ?? 0)
 
-  const totalSpent = varBudget + miscTotal + savingsCommitment
+  const totalSpent = varSpent + miscTotal + savingsCommitment
   const remaining  = adjustedDisposable - totalSpent
   const positive   = remaining >= 0
 
@@ -117,10 +113,12 @@ export default function PersonalRemaining({ period }) {
           Disposable{' '}
           <span className="font-semibold" style={{ color: t.textSecondary }}>{currency(adjustedDisposable)}</span>
         </span>
-        <span className="text-xs" style={{ color: t.textMuted }}>
-          Var budget{' '}
-          <span className="font-semibold" style={{ color: t.textSecondary }}>−{currency(varBudget)}</span>
-        </span>
+        {varSpent > 0 && (
+          <span className="text-xs" style={{ color: t.textMuted }}>
+            Var spent{' '}
+            <span className="font-semibold" style={{ color: t.textSecondary }}>−{currency(varSpent)}</span>
+          </span>
+        )}
         {miscTotal > 0 && (
           <span className="text-xs" style={{ color: t.textMuted }}>
             Misc{' '}

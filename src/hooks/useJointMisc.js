@@ -55,31 +55,16 @@ export function useJointMisc() {
     const { deduction_type = 'variable', custom_split_ratio, ...coreFields } = fields
 
     if (deduction_type === 'variable') {
-      // Spread proportionally across variable categories
-      const { data: cats } = await supabase
-        .from('joint_variable_categories')
-        .select('id, monthly_budget')
-
-      const totalBudget = cats?.reduce((s, c) => s + Number(c.monthly_budget), 0) ?? 0
-
-      if (cats?.length && totalBudget > 0) {
-        const txns = cats.map(cat => ({
-          category_id:      cat.id,
-          description:      `Misc: ${coreFields.name}`,
-          amount:           parseFloat(((Number(cat.monthly_budget) / totalBudget) * Number(coreFields.amount)).toFixed(2)),
-          transaction_date: coreFields.expense_date,
-          created_by:       userId,
-        }))
-        await supabase.from('joint_transactions').insert(txns)
-        broadcast('joint-variable')
-      }
-
-      // Also save the misc record for audit, tagged as variable deduction
+      // Save the misc record as an audit entry only.
+      // The joint budget card adds variable-type misc to the total budget figure
+      // (expanding what's available) and includes it in amount-spent, so the
+      // progress bar correctly reflects this spend — no joint_transactions needed.
       await supabase.from('joint_misc_expenses').insert({
         ...coreFields,
         deduction_type,
         custom_split_ratio: null,
       })
+      broadcast('joint-variable') // refresh variable spending views
 
     } else {
       // 'personal' deduction — save misc record then create tasks
