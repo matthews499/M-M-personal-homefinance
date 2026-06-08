@@ -12,50 +12,46 @@ export function transactionsForMonth(transactions = [], month) {
   return transactions.filter(t => t.transaction_date.startsWith(prefix))
 }
 
-// ── Joint contribution ───────────────────────────────────────
+// ── Contribution model (correct) ────────────────────────────
+//
+//   available    = salary − personal_fixed_total      (per person)
+//   total_avail  = Σ available
+//   joint_costs  = Σ joint_fixed + Σ var_budgets
+//   total_disp   = total_avail − joint_costs
+//   disposable   = total_disp × ratio                 (per person)
+//   contribution = available − disposable              (derived)
+//
+// These are now computed server-side in get_joint_contributions().
+// The helpers below are kept for the What-if calculator which does
+// its own in-browser projection without hitting the DB.
 
-// What one person contributes to the joint pot this month
+export function calcAvailable(salary, personalFixedTotal) {
+  return Number(salary) - Number(personalFixedTotal)
+}
+
+export function calcTotalDisposable(totalAvailable, jointFixedTotal, varBudgetTotal) {
+  return totalAvailable - jointFixedTotal - varBudgetTotal
+}
+
+// Each person's share of total disposable
+export function calcDisposable(totalDisposable, matthewRatio, isMatthew) {
+  const ratio = isMatthew ? Number(matthewRatio) : 1 - Number(matthewRatio)
+  return totalDisposable * ratio
+}
+
+// Derived contribution = available − disposable
+export function calcContribution(available, disposable) {
+  return available - disposable
+}
+
+// ── Legacy helpers (kept for backward compat) ────────────────
+
 export function calcJointContribution(salary, personalFixedCosts = []) {
   return Number(salary) - sumAmount(personalFixedCosts)
 }
 
-// ── Joint pot balance ────────────────────────────────────────
-
-/**
- * Joint pot balance for the current month.
- *
- * balance = (matthew_contrib + maddy_contrib)
- *         - sum(joint_fixed_outgoings)      ← includes savings auto-entries
- *         - sum(joint_transactions this month)
- */
-export function calcJointBalance({
-  matthewSalary,
-  matthewPersonalFixed,
-  maddySalary,
-  maddyPersonalFixed,
-  jointFixed = [],
-  jointCategories = [],
-}) {
-  const matthewContrib = calcJointContribution(matthewSalary, matthewPersonalFixed)
-  const maddyContrib   = calcJointContribution(maddySalary,   maddyPersonalFixed)
-  const totalIn        = matthewContrib + maddyContrib
-  const totalFixed     = sumAmount(jointFixed)
-  const totalVarBudget = jointCategories.reduce((acc, c) => acc + Number(c.monthly_budget), 0)
-  return totalIn - totalFixed - totalVarBudget
-}
-
-// ── Disposable income ────────────────────────────────────────
-
-// Each person's share of the joint surplus
-export function calcDisposable(jointBalance, matthewRatio, isMatthew) {
-  const ratio = isMatthew ? Number(matthewRatio) : 1 - Number(matthewRatio)
-  return jointBalance * ratio
-}
-
-// Personal disposable = surplus share (joint surplus already accounts for their contribution)
-// Personal variable spending is tracked separately in personal section
-export function calcPersonalDisposable(jointBalance, matthewRatio, isMatthew, personalVariableSpent = 0) {
-  return calcDisposable(jointBalance, matthewRatio, isMatthew) - personalVariableSpent
+export function calcPersonalDisposable(totalDisposable, matthewRatio, isMatthew, personalVariableSpent = 0) {
+  return calcDisposable(totalDisposable, matthewRatio, isMatthew) - personalVariableSpent
 }
 
 // ── Savings pots ─────────────────────────────────────────────

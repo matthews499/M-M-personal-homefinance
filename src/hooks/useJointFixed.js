@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { broadcast, listenFor } from '../utils/broadcast'
+import { createExpenseTasks } from '../utils/createExpenseTasks'
 
 const KEY = 'joint-fixed'
 
@@ -26,10 +27,21 @@ export function useJointFixed() {
   }, [fetch])
 
   async function create(fields) {
-    const { error } = await supabase.from('joint_fixed_outgoings').insert(fields)
+    const { data, error } = await supabase
+      .from('joint_fixed_outgoings')
+      .insert(fields)
+      .select()
+      .single()
     if (error) throw new Error(error.message)
     await fetch()
     broadcast(KEY)
+    // Create expense_topup tasks for both users (fire-and-forget, non-blocking)
+    createExpenseTasks({
+      expenseId:     data.id,
+      expenseType:   'joint_fixed',
+      expenseName:   fields.name,
+      expenseAmount: Number(fields.amount),
+    }).catch(e => console.warn('[useJointFixed] task creation failed:', e.message))
   }
 
   async function update(id, fields) {

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { calcBudgetProgress } from '../utils/calculations'
 import { broadcast, listenFor } from '../utils/broadcast'
 import { getCurrentPeriod, getPeriodDateRange } from '../utils/payCycle'
+import { createExpenseTasks } from '../utils/createExpenseTasks'
 
 const KEY = 'joint-variable'
 
@@ -54,13 +55,21 @@ export function useJointVariable(period = getCurrentPeriod()) {
   // ── Categories ──────────────────────────────────────────────
 
   async function createCategory(fields) {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('joint_variable_categories')
       .insert(fields)
       .select()
+      .single()
     if (error) throw new Error(error.message)
     await fetch()
     broadcast(KEY)
+    // Create expense_topup tasks for both users
+    createExpenseTasks({
+      expenseId:     data.id,
+      expenseType:   'joint_variable',
+      expenseName:   fields.name,
+      expenseAmount: Number(fields.monthly_budget),
+    }).catch(e => console.warn('[useJointVariable] task creation failed:', e.message))
   }
 
   async function updateCategory(id, fields) {

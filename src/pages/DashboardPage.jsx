@@ -6,6 +6,8 @@ import { currency, greeting } from '../utils/format'
 import { monthLabel, ordinal } from '../utils/dates'
 import { t, cardStyle, surfaceStyle, inputStyle } from '../utils/theme'
 import { getPeriodLabel, getCurrentPeriod } from '../utils/payCycle'
+import { TasksSection } from '../components/dashboard/TasksSection'
+import { ensureContributionTasks } from '../utils/taskGuard'
 
 function Label({ children }) {
   return (
@@ -174,13 +176,20 @@ function WhatIfModal({ derived, onClose }) {
   const [dFixed,   setDFixed]   = useState(String(maddy.personal_fixed_total))
   const [mPct,     setMPct]     = useState(Math.round(matthewRatio * 100))
 
-  const mContrib  = Math.max(0, (parseFloat(mSalary) || 0) - (parseFloat(mFixed) || 0))
-  const dContrib  = Math.max(0, (parseFloat(dSalary) || 0) - (parseFloat(dFixed) || 0))
-  const totalIn   = mContrib + dContrib
-  const balance   = totalIn - fixedTotal - varBudget
-  const mDisp     = balance * (mPct / 100)
-  const dDisp     = balance * (1 - mPct / 100)
-  const positive  = balance >= 0
+  // Correct model: available = salary − personal_fixed
+  //                totalDisposable = totalAvailable − jointCosts
+  //                disposable = totalDisposable × ratio
+  //                contribution = available − disposable
+  const mAvail      = (parseFloat(mSalary) || 0) - (parseFloat(mFixed) || 0)
+  const dAvail      = (parseFloat(dSalary) || 0) - (parseFloat(dFixed) || 0)
+  const totalAvail  = mAvail + dAvail
+  const totalDisp   = totalAvail - fixedTotal - varBudget
+  const mDisp       = totalDisp * (mPct / 100)
+  const dDisp       = totalDisp * (1 - mPct / 100)
+  const mContrib    = mAvail - mDisp
+  const dContrib    = dAvail - dDisp
+  const totalIn     = mContrib + dContrib
+  const positive    = totalDisp >= 0
 
   return (
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.85)' }} onClick={onClose}>
@@ -242,9 +251,10 @@ function WhatIfModal({ derived, onClose }) {
           {/* Results */}
           <div className="rounded-xl p-4 space-y-2.5" style={{ backgroundColor: positive ? 'rgba(52,211,153,0.08)' : 'rgba(244,63,94,0.08)', border: `1px solid ${positive ? 'rgba(52,211,153,0.20)' : 'rgba(244,63,94,0.20)'}` }}>
             <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: positive ? t.green : t.red }}>Projected outcome</p>
+
             <div className="flex justify-between">
-              <span className="text-sm" style={{ color: t.textSecondary }}>Contributions in</span>
-              <span className="text-sm font-semibold tabular-nums" style={{ color: t.textPrimary }}>{currency(totalIn)}</span>
+              <span className="text-sm" style={{ color: t.textSecondary }}>Total available</span>
+              <span className="text-sm font-semibold tabular-nums" style={{ color: t.textPrimary }}>{currency(totalAvail)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-sm" style={{ color: t.textSecondary }}>Fixed outgoings</span>
@@ -255,16 +265,23 @@ function WhatIfModal({ derived, onClose }) {
               <span className="text-sm font-semibold tabular-nums" style={{ color: t.red }}>−{currency(varBudget)}</span>
             </div>
             <div className="flex justify-between pt-1" style={{ borderTop: `1px solid ${t.divider}` }}>
-              <span className="text-sm font-semibold" style={{ color: t.textPrimary }}>Joint balance</span>
-              <span className="text-base font-bold tabular-nums" style={{ color: positive ? t.green : t.red }}>{currency(balance)}</span>
+              <span className="text-sm font-semibold" style={{ color: t.textPrimary }}>Total disposable</span>
+              <span className="text-base font-bold tabular-nums" style={{ color: positive ? t.green : t.red }}>{currency(totalDisp)}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-sm" style={{ color: t.textSecondary }}>Matthew disposable</span>
-              <span className="text-sm font-semibold tabular-nums" style={{ color: mDisp >= 0 ? t.green : t.red }}>{currency(mDisp)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-sm" style={{ color: t.textSecondary }}>Maddy disposable</span>
-              <span className="text-sm font-semibold tabular-nums" style={{ color: dDisp >= 0 ? t.green : t.red }}>{currency(dDisp)}</span>
+
+            {/* Per-person breakdown */}
+            <div className="space-y-1.5 pt-1" style={{ borderTop: `1px solid ${t.divider}` }}>
+              {[
+                { name: 'Matthew', avail: mAvail, disp: mDisp, contrib: mContrib },
+                { name: 'Maddy',   avail: dAvail, disp: dDisp, contrib: dContrib },
+              ].map(p => (
+                <div key={p.name} className="rounded-lg px-3 py-2" style={{ background: 'rgba(128,128,128,0.06)' }}>
+                  <p className="text-xs font-semibold mb-1.5" style={{ color: t.textMuted }}>{p.name}</p>
+                  <div className="flex justify-between"><span className="text-xs" style={{ color: t.textSecondary }}>Available</span><span className="text-xs font-semibold tabular-nums" style={{ color: t.textPrimary }}>{currency(p.avail)}</span></div>
+                  <div className="flex justify-between"><span className="text-xs" style={{ color: t.textSecondary }}>Disposable ({p.name === 'Matthew' ? mPct : 100 - mPct}%)</span><span className="text-xs font-semibold tabular-nums" style={{ color: p.disp >= 0 ? t.green : t.red }}>{currency(p.disp)}</span></div>
+                  <div className="flex justify-between"><span className="text-xs" style={{ color: t.textSecondary }}>Contribution</span><span className="text-xs font-semibold tabular-nums" style={{ color: p.contrib >= 0 ? t.textPrimary : t.red }}>{currency(p.contrib)}</span></div>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -308,14 +325,32 @@ export default function DashboardPage() {
     )
   }
 
-  const { me, partner, matthew, maddy, combinedIncome, totalIn, fixedTotal, varBudget, miscThisMonth, jointBalance, myDisposable, matthewRatio, maddyRatio, isMatthew } = derived
+  // Ensure contribution tasks exist for this period (idempotent)
+  useEffect(() => { ensureContributionTasks() }, [])
+
+  const {
+    me, partner, matthew, maddy,
+    combinedIncome, totalIn, fixedTotal, varBudget, miscThisMonth,
+    jointBalance, myDisposable, matthewRatio, maddyRatio, isMatthew,
+    matthewDisposable, maddyDisposable,
+    matthewAvailable, maddyAvailable,
+    matthewContribution, maddyContribution,
+    matthewSummary, maddySummary,
+  } = derived
   const surplus = jointBalance >= 0
-  const totalContribs = totalIn
   const period = getCurrentPeriod()
 
-  // Transfer net adjustment for my disposable
-  const transferNet = transferNetForUser(period, me.user_id)
-  const adjustedDisposable = myDisposable + transferNet
+  // Transfer net adjustments
+  const transferNet         = transferNetForUser(period, me.user_id)
+  const matthewTransferNet  = transferNetForUser(period, matthew.user_id)
+  const maddyTransferNet    = transferNetForUser(period, maddy.user_id)
+  const adjustedDisposable  = myDisposable + transferNet
+
+  // Remaining this period for each person
+  const matthewRemaining = matthewDisposable + matthewTransferNet
+    - Number(matthewSummary.var_spent ?? 0) - Number(matthewSummary.misc_total ?? 0)
+  const maddyRemaining = maddyDisposable + maddyTransferNet
+    - Number(maddySummary.var_spent ?? 0) - Number(maddySummary.misc_total ?? 0)
 
   // Recent transfers for this period (last 5)
   const recentTransfers = transfers.filter(tr => tr.period === period).slice(0, 5)
@@ -353,43 +388,42 @@ export default function DashboardPage() {
 
       {/* ── Contributor cards ── */}
       <div className="grid grid-cols-2 gap-3">
-        {[{ person: me, isMe: true }, { person: partner, isMe: false }].map(({ person, isMe }) => {
-          const pct = totalContribs > 0 ? Math.round((Number(person.contribution) / totalContribs) * 100) : 0
-          return (
-            <div
-              key={person.user_id}
-              className="rounded-2xl p-4 space-y-3 transition-colors active:brightness-90"
-              style={{ ...cardStyle, cursor: isMe ? 'pointer' : 'default' }}
-              onClick={isMe ? () => setEditProfile(true) : undefined}
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold uppercase tracking-widest" style={{ color: t.textMuted }}>{person.name}</p>
-                {isMe && (
-                  <svg className="w-3.5 h-3.5" style={{ color: t.textMuted }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a4 4 0 01-1.414.828l-3 1 1-3a4 4 0 01.828-1.414z" />
-                  </svg>
-                )}
-              </div>
+        {[
+          { person: matthew, available: matthewAvailable, contribution: matthewContribution, disposable: matthewDisposable, isMe: isMatthew },
+          { person: maddy,   available: maddyAvailable,   contribution: maddyContribution,   disposable: maddyDisposable,   isMe: !isMatthew },
+        ].map(({ person, available, contribution, disposable, isMe }) => (
+          <div
+            key={person.user_id}
+            className="rounded-2xl p-4 transition-colors active:brightness-90"
+            style={{ ...cardStyle, cursor: isMe ? 'pointer' : 'default' }}
+            onClick={isMe ? () => setEditProfile(true) : undefined}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: t.textMuted }}>{person.name}</p>
+              {isMe && (
+                <svg className="w-3.5 h-3.5" style={{ color: t.textMuted }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a4 4 0 01-1.414.828l-3 1 1-3a4 4 0 01.828-1.414z" />
+                </svg>
+              )}
+            </div>
 
-              <div style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '12px' }} className="space-y-2.5">
-                <div>
-                  <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Salary</p>
-                  <p className="text-base font-bold tabular-nums" style={{ color: t.textPrimary }}>{currency(person.salary)}</p>
-                </div>
-                <div>
-                  <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Fixed costs</p>
-                  <p className="text-sm font-semibold tabular-nums" style={{ color: t.red }}>−{currency(person.personal_fixed_total)}</p>
-                </div>
-                <div style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '10px' }}>
-                  <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Contribution</p>
-                  <p className="text-base font-bold tabular-nums" style={{ color: t.textPrimary }}>{currency(person.contribution)}</p>
-                  {/* Feature 5: contribution percentage */}
-                  <p className="text-xs mt-0.5 tabular-nums" style={{ color: t.violet }}>{pct}% of joint pot</p>
-                </div>
+            <div className="space-y-2.5" style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '10px' }}>
+              <div>
+                <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Available</p>
+                <p className="text-base font-bold tabular-nums" style={{ color: t.textPrimary }}>{currency(available)}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: t.textMuted }}>salary − personal fixed</p>
+              </div>
+              <div style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '8px' }}>
+                <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Contribution</p>
+                <p className="text-sm font-bold tabular-nums" style={{ color: contribution >= 0 ? t.textPrimary : t.red }}>{currency(contribution)}</p>
+              </div>
+              <div style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '8px' }}>
+                <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Disposable</p>
+                <p className="text-sm font-bold tabular-nums" style={{ color: t.green }}>{currency(disposable)}</p>
               </div>
             </div>
-          )
-        })}
+          </div>
+        ))}
       </div>
 
       {/* ── Joint pot ── */}
@@ -415,6 +449,28 @@ export default function DashboardPage() {
           </span>
         </div>
       </div>
+
+      {/* ── Remaining this period ── */}
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          { label: 'Matthew', remaining: matthewRemaining },
+          { label: 'Maddy',   remaining: maddyRemaining   },
+        ].map(({ label, remaining }) => (
+          <div key={label} className="rounded-2xl p-4" style={cardStyle}>
+            <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: t.textMuted }}>{label}</p>
+            <p
+              className="text-2xl font-bold tabular-nums"
+              style={{ color: remaining >= 0 ? t.green : t.red }}
+            >
+              {currency(remaining)}
+            </p>
+            <p className="text-[10px] mt-1" style={{ color: t.textMuted }}>remaining this period</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Tasks ── */}
+      <TasksSection />
 
       {/* ── My disposable income ── */}
       <div
