@@ -299,6 +299,9 @@ function WhatIfModal({ derived, onClose }) {
 // ── Dashboard ─────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  // Hoist period above all hooks and early returns to avoid TDZ errors in effects
+  const period = getCurrentPeriod()
+
   const navigate = useNavigate()
   const { derived, loading, updateProfile, updateSplitRatio } = useDashboard()
   const { transfers, transferNetForUser } = useTransfers()
@@ -373,7 +376,7 @@ export default function DashboardPage() {
     matthewContribution, maddyContribution,
   } = derived
   const surplus = jointBalance >= 0
-  const period = getCurrentPeriod()
+  // period is declared at the top of the component (before hooks)
 
   // Transfer net adjustments
   const transferNet        = transferNetForUser(period, me.user_id)
