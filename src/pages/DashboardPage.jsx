@@ -303,6 +303,9 @@ export default function DashboardPage() {
   const [showWhatIf,  setShowWhatIf]  = useState(false)
   const [splitLocked, setSplitLocked] = useState(() => localStorage.getItem('splitLocked') === 'true')
 
+  // Must be above any early returns — hooks must always run in the same order
+  useEffect(() => { ensureContributionTasks() }, [])
+
   function toggleSplitLock() {
     const next = !splitLocked
     setSplitLocked(next)
@@ -324,9 +327,6 @@ export default function DashboardPage() {
       </div>
     )
   }
-
-  // Ensure contribution tasks exist for this period (idempotent)
-  useEffect(() => { ensureContributionTasks() }, [])
 
   const {
     me, partner, matthew, maddy,
