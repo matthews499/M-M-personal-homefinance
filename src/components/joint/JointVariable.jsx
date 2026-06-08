@@ -277,6 +277,13 @@ export default function JointVariable({ period }) {
     )
   }
 
+  // ── Totals across all categories ─────────────────────────────
+  const totalBudget = categories.reduce((s, c) => s + Number(c.monthly_budget), 0)
+  const totalSpent  = transactions.reduce((s, tx) => s + Number(tx.amount), 0)
+  const totalLeft   = totalBudget - totalSpent
+  const totalPct    = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0
+  const summaryColor = totalPct >= 100 ? t.red : totalPct >= 80 ? t.amber : t.green
+
   return (
     <>
       <div className="rounded-2xl p-5 space-y-5" style={cardStyle}>
@@ -291,6 +298,38 @@ export default function JointVariable({ period }) {
             + Category
           </button>
         </div>
+
+        {/* Variable budget summary */}
+        {categories.length > 0 && (
+          <div className="rounded-xl px-4 py-3.5 space-y-2.5" style={{ backgroundColor: 'rgba(128,128,128,0.06)', border: `1px solid ${t.divider}` }}>
+            <div className="flex items-baseline justify-between">
+              <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: t.textMuted }}>Total variable</span>
+              <span className="text-xs tabular-nums font-semibold" style={{ color: summaryColor }}>{totalPct}% used</span>
+            </div>
+            <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(128,128,128,0.15)' }}>
+              <div
+                className="h-full rounded-full transition-all duration-300"
+                style={{ width: `${Math.min(totalPct, 100)}%`, backgroundColor: summaryColor }}
+              />
+            </div>
+            <div className="flex justify-between text-sm tabular-nums">
+              <div>
+                <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Spent</p>
+                <p className="font-bold" style={{ color: summaryColor }}>{currency(totalSpent)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Budget</p>
+                <p className="font-bold" style={{ color: t.textPrimary }}>{currency(totalBudget)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>{totalLeft >= 0 ? 'Remaining' : 'Over'}</p>
+                <p className="font-bold" style={{ color: totalLeft >= 0 ? t.green : t.red }}>
+                  {totalLeft >= 0 ? currency(totalLeft) : `−${currency(Math.abs(totalLeft))}`}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Category list */}
         <div className="space-y-2">
