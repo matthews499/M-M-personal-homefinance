@@ -1,6 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
+import { broadcast, listenFor } from '../utils/broadcast'
+
+const KEY = 'transfers'
 
 export function useTransfers() {
   const { session } = useAuth()
@@ -22,7 +25,10 @@ export function useTransfers() {
     setLoading(false)
   }, [userId])
 
-  useEffect(() => { fetch() }, [fetch])
+  useEffect(() => {
+    fetch()
+    return listenFor(KEY, fetch)
+  }, [fetch])
 
   function transfersForPeriod(period) {
     return transfers.filter(t => t.period === period)
@@ -52,6 +58,7 @@ export function useTransfers() {
       })
     if (error) throw new Error(error.message)
     await fetch()
+    broadcast(KEY)
   }
 
   async function removeTransfer(id) {
@@ -61,6 +68,7 @@ export function useTransfers() {
       .eq('id', id)
     if (error) throw new Error(error.message)
     await fetch()
+    broadcast(KEY)
   }
 
   return {
