@@ -123,8 +123,25 @@ export function useJointMisc() {
   }
 
   async function remove(id) {
+    const item = items.find(i => i.id === id)
+
     const { error } = await supabase.from('joint_misc_expenses').delete().eq('id', id)
     if (error) throw new Error(error.message)
+
+    // Bug 1: cascade — delete the linked personal_misc_expenses rows that were
+    // pre-inserted when this personal-deduction misc expense was created.
+    // Match on name + expense_date for both users (no FK exists; these fields
+    // are specific enough for a two-person app).
+    if (item?.deduction_type === 'personal') {
+      await supabase
+        .from('personal_misc_expenses')
+        .delete()
+        .eq('name', item.name)
+        .eq('expense_date', item.expense_date)
+        .in('user_id', [MATTHEW_UUID, MADDY_UUID])
+      broadcast('personal-misc')
+    }
+
     await fetch()
     broadcast(KEY)
   }

@@ -18,35 +18,34 @@ export default function PersonalRemaining({ period }) {
   // Wait for both main data and personal summaries (var_spent / misc_total)
   const loading = dashLoading || psLoading || savLoading
 
-  // Monthly savings commitment across all pots
-  const savingsCommitment = pots.reduce((acc, pot) => {
-    if (pot.mode === 'open') {
-      return acc + Number(pot.monthly_commitment ?? 0)
-    }
-    // targeted — use the auto monthly guide
-    const txns    = transactionsForPot(pot.id)
-    const balance = calcSavingsBalance(txns)
-    const target  = Number(pot.target_amount ?? 0)
-    if (balance >= target) return acc // already complete
-    return acc + calcSavingsMonthlyRequired(pot, txns)
-  }, 0)
+  // Targeted-mode savings only — open-mode deposits deduct at time of logging
+  // (via personal_misc_expenses) and are already captured in misc_total from the RPC.
+  const targetedSavingsCommitment = pots
+    .filter(p => p.mode !== 'open')
+    .reduce((acc, pot) => {
+      const txns    = transactionsForPot(pot.id)
+      const balance = calcSavingsBalance(txns)
+      const target  = Number(pot.target_amount ?? 0)
+      if (balance >= target) return acc // pot complete — no more commitment
+      return acc + calcSavingsMonthlyRequired(pot, txns)
+    }, 0)
 
-  // Fire disposable alerts (safe to call every render — dedup_key prevents duplicates)
-  // Uses actual var_spent from derived.mySummary (not the budget allocation).
+  // Fire disposable alerts once data is ready.
+  // Uses trueDisposable (targeted savings already deducted) as the denominator.
   useEffect(() => {
     if (!derived || loading) return
-    const transferNet        = transferNetForUser(activePeriod, derived.me.user_id)
-    const adjustedDisposable = derived.myDisposable + transferNet
-    const varSpent           = Number(derived.mySummary.var_spent  ?? 0)
-    const miscTotal          = Number(derived.mySummary.misc_total ?? 0)
-    const spent              = varSpent + miscTotal + savingsCommitment
+    const tNet     = transferNetForUser(activePeriod, derived.me.user_id)
+    const tOut     = Math.max(0, -tNet)
+    const trueDisp = derived.myDisposable - targetedSavingsCommitment
+    const varSp    = Number(derived.mySummary.var_spent  ?? 0)
+    const miscTot  = Number(derived.mySummary.misc_total ?? 0)
     checkDisposableAlerts({
       userId:     derived.me.user_id,
       period:     activePeriod,
-      disposable: adjustedDisposable,
-      spent,
+      disposable: trueDisp,
+      spent:      varSp + miscTot + tOut,
     })
-  }, [derived, loading, savingsCommitment, activePeriod, transferNetForUser])
+  }, [derived, loading, targetedSavingsCommitment, activePeriod, transferNetForUser])
 
   if (loading || !derived) {
     return (
@@ -56,19 +55,29 @@ export default function PersonalRemaining({ period }) {
     )
   }
 
-  const transferNet        = transferNetForUser(activePeriod, derived.me.user_id)
-  const adjustedDisposable = derived.myDisposable + transferNet
+  const transferNet  = transferNetForUser(activePeriod, derived.me.user_id)
+  // Transfers out = spending (reduce remaining, counted in % numerator).
+  // Transfers in  = boost remaining only (NOT in % denominator, NOT in % numerator).
+  const transfersOut = Math.max(0, -transferNet)
+  const transfersIn  = Math.max(0,  transferNet)
 
-  // Use actual spending from the RPC summary, not budget allocation
+  // True disposable = allocated share − targeted savings pre-commitments.
+  // This is the % denominator — never inflated/deflated by transfers.
+  const trueDisposable = derived.myDisposable - targetedSavingsCommitment
+
+  // Use actual spending totals from the RPC summary
   const varSpent  = Number(derived.mySummary.var_spent  ?? 0)
   const miscTotal = Number(derived.mySummary.misc_total ?? 0)
 
-  const totalSpent = varSpent + miscTotal + savingsCommitment
-  const remaining  = adjustedDisposable - totalSpent
-  const positive   = remaining >= 0
+  // "spent" for % purposes includes transfers out (they reduce your remaining like any spend)
+  const spent    = varSpent + miscTotal + transfersOut
+  // remaining can exceed trueDisposable when transfers in > 0 (expected behaviour)
+  const remaining = trueDisposable - spent + transfersIn
+  const positive  = remaining >= 0
 
-  const spentPct = adjustedDisposable > 0
-    ? Math.min((totalSpent / adjustedDisposable) * 100, 100)
+  // % = what you've committed out of your true disposable (can exceed 100 if overspent)
+  const spentPct = trueDisposable > 0
+    ? (spent / trueDisposable) * 100
     : 0
 
   // Progress bar colour — green → amber → red
@@ -103,7 +112,7 @@ export default function PersonalRemaining({ period }) {
       <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(128,128,128,0.15)' }}>
         <div
           className="h-full rounded-full transition-all duration-300"
-          style={{ width: `${spentPct}%`, backgroundColor: barColor }}
+          style={{ width: `${Math.min(spentPct, 100)}%`, backgroundColor: barColor }}
         />
       </div>
 
@@ -111,7 +120,7 @@ export default function PersonalRemaining({ period }) {
       <div className="flex gap-4 flex-wrap">
         <span className="text-xs" style={{ color: t.textMuted }}>
           Disposable{' '}
-          <span className="font-semibold" style={{ color: t.textSecondary }}>{currency(adjustedDisposable)}</span>
+          <span className="font-semibold" style={{ color: t.textSecondary }}>{currency(trueDisposable)}</span>
         </span>
         {varSpent > 0 && (
           <span className="text-xs" style={{ color: t.textMuted }}>
@@ -125,16 +134,22 @@ export default function PersonalRemaining({ period }) {
             <span className="font-semibold" style={{ color: t.textSecondary }}>−{currency(miscTotal)}</span>
           </span>
         )}
-        {savingsCommitment > 0 && (
+        {targetedSavingsCommitment > 0 && (
           <span className="text-xs" style={{ color: t.textMuted }}>
             Savings{' '}
-            <span className="font-semibold" style={{ color: t.textSecondary }}>−{currency(savingsCommitment)}</span>
+            <span className="font-semibold" style={{ color: t.textSecondary }}>−{currency(targetedSavingsCommitment)}</span>
           </span>
         )}
-        {transferNet !== 0 && (
-          <span className="text-xs" style={{ color: transferNet > 0 ? t.green : t.red }}>
-            Transfers{' '}
-            <span className="font-semibold">{transferNet > 0 ? '+' : '−'}{currency(Math.abs(transferNet))}</span>
+        {transfersOut > 0 && (
+          <span className="text-xs" style={{ color: t.red }}>
+            Sent{' '}
+            <span className="font-semibold">−{currency(transfersOut)}</span>
+          </span>
+        )}
+        {transfersIn > 0 && (
+          <span className="text-xs" style={{ color: t.green }}>
+            Received{' '}
+            <span className="font-semibold">+{currency(transfersIn)}</span>
           </span>
         )}
       </div>

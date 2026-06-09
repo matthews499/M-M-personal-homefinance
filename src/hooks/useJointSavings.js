@@ -202,11 +202,35 @@ export function useJointSavings() {
   }
 
   async function removeTransaction(id) {
+    const tx  = transactions.find(t => t.id === id)
+    const pot = pots.find(p => p.id === tx?.pot_id)
+
     const { error } = await supabase
       .from('joint_savings_deposits')
       .delete()
       .eq('id', id)
     if (error) throw new Error(error.message)
+
+    // Bug 1: cascade — delete the linked personal_misc_expenses rows that were
+    // pre-inserted when this open-mode deposit / withdrawal was logged.
+    // Match on name + transaction_date for both users (no FK; specific enough for 2-person app).
+    if (
+      pot?.mode === 'open' &&
+      tx?.transaction_date &&
+      (tx.matthew_share != null || tx.maddy_share != null)
+    ) {
+      const label = tx.type === 'withdrawal'
+        ? `Savings withdrawal — ${pot.name}`
+        : `Savings deposit — ${pot.name}`
+      await supabase
+        .from('personal_misc_expenses')
+        .delete()
+        .eq('name', label)
+        .eq('expense_date', tx.transaction_date)
+        .in('user_id', [MATTHEW_UUID, MADDY_UUID])
+      broadcast('personal-misc')
+    }
+
     await fetch()
     broadcast(KEY)
   }

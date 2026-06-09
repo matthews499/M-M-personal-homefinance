@@ -315,27 +315,30 @@ export default function DashboardPage() {
   // Must be above any early returns — hooks must always run in the same order
   useEffect(() => { ensureContributionTasks() }, [])
 
-  // Disposable alerts (my spending vs my disposable)
+  // Disposable alerts (my spending vs my true disposable)
+  // trueDisposable = myDisposable − targeted savings commitments (open-mode already in misc_total)
   useEffect(() => {
     if (!derived) return
-    const userId        = derived.me.user_id
-    const tNet          = transferNetForUser(period, userId)
-    const adjDisposable = derived.myDisposable + tNet
-    const savCommit     = pots.reduce((acc, pot) => {
-      if (pot.mode === 'open') return acc + Number(pot.monthly_commitment ?? 0)
-      const txns    = transactionsForPot(pot.id)
-      const balance = calcSavingsBalance(txns)
-      const target  = Number(pot.target_amount ?? 0)
-      if (balance >= target) return acc
-      return acc + calcSavingsMonthlyRequired(pot, txns)
-    }, 0)
+    const userId    = derived.me.user_id
+    const tNet      = transferNetForUser(period, userId)
+    const tOut      = Math.max(0, -tNet)
+    const savCommit = pots
+      .filter(p => p.mode !== 'open')
+      .reduce((acc, pot) => {
+        const txns    = transactionsForPot(pot.id)
+        const balance = calcSavingsBalance(txns)
+        const target  = Number(pot.target_amount ?? 0)
+        if (balance >= target) return acc
+        return acc + calcSavingsMonthlyRequired(pot, txns)
+      }, 0)
+    const trueDisp  = derived.myDisposable - savCommit
     const varSpent  = Number(derived.mySummary.var_spent  ?? 0)
     const miscTotal = Number(derived.mySummary.misc_total ?? 0)
     checkDisposableAlerts({
       userId,
       period,
-      disposable: adjDisposable,
-      spent: varSpent + miscTotal + savCommit,
+      disposable: trueDisp,
+      spent: varSpent + miscTotal + tOut,
     })
   }, [derived, pots, period, transferNetForUser, transactionsForPot])
 
@@ -378,9 +381,25 @@ export default function DashboardPage() {
   const surplus = jointBalance >= 0
   // period is declared at the top of the component (before hooks)
 
-  // Transfer net adjustments
-  const transferNet        = transferNetForUser(period, me.user_id)
-  const adjustedDisposable = myDisposable + transferNet
+  // Targeted-mode savings commitment (open-mode deducts at deposit time via personal_misc)
+  const targetedSavCommit = pots
+    .filter(p => p.mode !== 'open')
+    .reduce((acc, pot) => {
+      const txns    = transactionsForPot(pot.id)
+      const balance = calcSavingsBalance(txns)
+      const target  = Number(pot.target_amount ?? 0)
+      if (balance >= target) return acc
+      return acc + calcSavingsMonthlyRequired(pot, txns)
+    }, 0)
+
+  // True disposable = allocated share − targeted savings pre-commitments.
+  // This is the denominator for the % tracker — not affected by transfers.
+  const trueDisposable = myDisposable - targetedSavCommit
+
+  // Split transfer net into sent vs received components
+  const transferNet  = transferNetForUser(period, me.user_id)
+  const transfersOut = Math.max(0, -transferNet)  // sent (counts as spending)
+  const transfersIn  = Math.max(0,  transferNet)  // received (boosts remaining only)
 
   // Recent transfers for this period (last 5)
   const recentTransfers = transfers.filter(tr => tr.period === period).slice(0, 5)
@@ -505,15 +524,13 @@ export default function DashboardPage() {
 
       {/* ── My remaining this period ── */}
       {(() => {
-        const myRemaining = adjustedDisposable
-          - Number(derived.mySummary.var_spent  ?? 0)
-          - Number(derived.mySummary.misc_total ?? 0)
-        const myPct = adjustedDisposable > 0
-          ? Math.min(
-              ((adjustedDisposable - myRemaining) / adjustedDisposable) * 100,
-              100
-            )
-          : 0
+        const varSpent  = Number(derived.mySummary.var_spent  ?? 0)
+        const miscTotal = Number(derived.mySummary.misc_total ?? 0)
+        // Transfers out count as spending; transfers in boost remaining but not the %
+        const spent       = varSpent + miscTotal + transfersOut
+        const myRemaining = trueDisposable - spent + transfersIn
+        // % = what you've spent of your true disposable (can exceed 100 if overspent)
+        const myPct       = trueDisposable > 0 ? (spent / trueDisposable) * 100 : 0
         const positiveRem = myRemaining >= 0
         const barColor    = myPct >= 80 ? t.red : myPct >= 50 ? t.amber : t.green
         return (
@@ -541,15 +558,16 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: 'rgba(128,128,128,0.15)' }}>
-              <div className="h-full rounded-full transition-all" style={{ width: `${myPct}%`, backgroundColor: barColor }} />
+              <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(myPct, 100)}%`, backgroundColor: barColor }} />
             </div>
             <p className="text-xs" style={{ color: t.textMuted }}>
               Disposable{' '}
-              <span className="font-semibold" style={{ color: t.textSecondary }}>{currency(adjustedDisposable)}</span>
-              {transferNet !== 0 && (
-                <span style={{ color: transferNet > 0 ? t.green : t.red }}>
-                  {transferNet > 0 ? ` · +${currency(transferNet)}` : ` · −${currency(Math.abs(transferNet))}`} transfers
-                </span>
+              <span className="font-semibold" style={{ color: t.textSecondary }}>{currency(trueDisposable)}</span>
+              {transfersOut > 0 && (
+                <span style={{ color: t.red }}> · −{currency(transfersOut)} sent</span>
+              )}
+              {transfersIn > 0 && (
+                <span style={{ color: t.green }}> · +{currency(transfersIn)} received</span>
               )}
             </p>
           </div>
@@ -568,15 +586,19 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between">
           <div>
             <Label>Your disposable income</Label>
-            <p className="text-3xl font-bold tracking-tight tabular-nums mt-2" style={{ color: adjustedDisposable >= 0 ? t.green : t.red }}>
-              {currency(adjustedDisposable)}
+            <p className="text-3xl font-bold tracking-tight tabular-nums mt-2" style={{ color: trueDisposable >= 0 ? t.green : t.red }}>
+              {currency(trueDisposable)}
             </p>
             <p className="text-xs mt-2" style={{ color: t.textMuted }}>
               {isMatthew ? `${Math.round(matthewRatio * 100)}%` : `${Math.round(maddyRatio * 100)}%`} of joint surplus
-              {transferNet !== 0 && (
-                <span style={{ color: transferNet > 0 ? t.green : t.red }}>
-                  {transferNet > 0 ? ` · +${currency(transferNet)} received` : ` · −${currency(Math.abs(transferNet))} sent`}
-                </span>
+              {targetedSavCommit > 0 && (
+                <span style={{ color: t.textMuted }}> · −{currency(targetedSavCommit)} savings</span>
+              )}
+              {transfersOut > 0 && (
+                <span style={{ color: t.red }}> · −{currency(transfersOut)} sent</span>
+              )}
+              {transfersIn > 0 && (
+                <span style={{ color: t.green }}> · +{currency(transfersIn)} received</span>
               )}
             </p>
           </div>

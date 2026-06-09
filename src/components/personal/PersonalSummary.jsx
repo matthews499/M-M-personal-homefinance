@@ -1,9 +1,10 @@
 import { useDashboard } from '../../hooks/useDashboard'
 import { usePersonalFixed } from '../../hooks/usePersonalFixed'
 import { usePersonalVariable } from '../../hooks/usePersonalVariable'
+import { usePersonalSavings } from '../../hooks/usePersonalSavings'
 import { currency } from '../../utils/format'
 import { monthParam } from '../../utils/dates'
-import { sumAmount, transactionsForMonth } from '../../utils/calculations'
+import { sumAmount, transactionsForMonth, calcSavingsMonthlyRequired, calcSavingsBalance } from '../../utils/calculations'
 import { t, cardStyle } from '../../utils/theme'
 
 function Row({ label, value, color, dimLabel }) {
@@ -20,8 +21,9 @@ export default function PersonalSummary() {
   const { derived, loading: dashLoading } = useDashboard()
   const { items: fixedItems, loading: fixedLoading } = usePersonalFixed()
   const { transactions, loading: varLoading } = usePersonalVariable(month)
+  const { pots, transactionsForPot, loading: savLoading } = usePersonalSavings()
 
-  const loading = dashLoading || fixedLoading || varLoading
+  const loading = dashLoading || fixedLoading || varLoading || savLoading
 
   if (loading || !derived) {
     return (
@@ -35,9 +37,26 @@ export default function PersonalSummary() {
 
   const salary        = Number(me.salary)
   const fixedTotal    = sumAmount(fixedItems)
-  const jointContrib  = salary - fixedTotal
+  const available     = salary - fixedTotal
+  // Actual joint contribution = what's left after subtracting the personal disposable share
+  const jointContrib  = available - myDisposable
   const varSpent      = sumAmount(transactionsForMonth(transactions, month))
-  const disposable    = myDisposable - varSpent
+
+  // Targeted-mode savings only — open-mode deposits deduct at time of logging
+  // and are already reflected in the personal misc / variable totals.
+  const targetedSavingsCommitment = pots
+    .filter(p => p.mode !== 'open')
+    .reduce((acc, pot) => {
+      const txns    = transactionsForPot(pot.id)
+      const balance = calcSavingsBalance(txns)
+      const target  = Number(pot.target_amount ?? 0)
+      if (balance >= target) return acc
+      return acc + calcSavingsMonthlyRequired(pot, txns)
+    }, 0)
+
+  // True disposable = allocated share − pre-committed savings
+  const trueDisposable = myDisposable - targetedSavingsCommitment
+  const remaining      = trueDisposable - varSpent
 
   return (
     <div className="rounded-2xl p-5 space-y-1" style={cardStyle}>
@@ -47,14 +66,17 @@ export default function PersonalSummary() {
       </div>
 
       <Row label="Salary"               value={currency(salary)} />
-      <Row label="Personal fixed costs" value={`−${currency(fixedTotal)}`}   color={fixedTotal > 0 ? t.red : t.textPrimary} />
-      <Row label="Joint contribution"   value={`−${currency(jointContrib)}`} color={t.textMuted} dimLabel />
-      <Row label="Personal variable"    value={`−${currency(varSpent)}`}     color={varSpent > 0 ? t.red : t.textPrimary} />
+      <Row label="Personal fixed costs" value={`−${currency(fixedTotal)}`}        color={fixedTotal > 0 ? t.red : t.textPrimary} />
+      <Row label="Joint contribution"   value={`−${currency(jointContrib)}`}      color={t.textMuted} dimLabel />
+      {targetedSavingsCommitment > 0 && (
+        <Row label="Savings commitment"   value={`−${currency(targetedSavingsCommitment)}`} color={t.textMuted} dimLabel />
+      )}
+      <Row label="Personal variable"    value={`−${currency(varSpent)}`}          color={varSpent > 0 ? t.red : t.textPrimary} />
 
       <div className="flex items-baseline justify-between pt-4">
-        <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: t.textMuted }}>Disposable income</span>
-        <span className="text-2xl font-bold tracking-tight tabular-nums" style={{ color: disposable >= 0 ? t.green : t.red }}>
-          {currency(disposable)}
+        <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: t.textMuted }}>Disposable remaining</span>
+        <span className="text-2xl font-bold tracking-tight tabular-nums" style={{ color: remaining >= 0 ? t.green : t.red }}>
+          {currency(remaining)}
         </span>
       </div>
     </div>
