@@ -1,10 +1,11 @@
 ﻿import { useState } from 'react'
 import { useAuth } from '../../lib/AuthContext'
 import { useJointVariable } from '../../hooks/useJointVariable'
+import { useJointMisc } from '../../hooks/useJointMisc'
 import { currency } from '../../utils/format'
-import { calcBudgetProgress, transactionsForMonth } from '../../utils/calculations'
+import { calcBudgetProgress, transactionsForMonth, sumAmount } from '../../utils/calculations'
 import { t, cardStyle, surfaceStyle, inputStyle } from '../../utils/theme'
-import { getCurrentPeriod } from '../../utils/payCycle'
+import { getCurrentPeriod, getPeriodDateRange } from '../../utils/payCycle'
 
 function SectionLabel({ children }) {
   return <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: t.textMuted }}>{children}</p>
@@ -249,12 +250,31 @@ export default function JointVariable({ period }) {
   const { session } = useAuth()
   const userId = session?.user?.id
   const activePeriod = period ?? getCurrentPeriod()
+  const { start, end } = getPeriodDateRange(activePeriod)
 
   const {
     categories, transactions, loading,
     createCategory, updateCategory, removeCategory,
     addTransaction, updateTransaction, removeTransaction,
   } = useJointVariable(activePeriod)
+
+  const { items: miscItems } = useJointMisc()
+
+  // Bug 3: variable-type misc proportionally reduces each category's effective budget
+  const variableMisc = sumAmount(
+    miscItems.filter(i =>
+      i.expense_date >= start && i.expense_date <= end &&
+      i.deduction_type === 'variable'
+    )
+  )
+  const totalRawBudget = categories.reduce((s, c) => s + Number(c.monthly_budget), 0)
+
+  // Effective (displayed) budget for each category after misc deduction
+  function effectiveBudget(cat) {
+    if (variableMisc <= 0 || totalRawBudget <= 0) return Number(cat.monthly_budget)
+    const proportion = Number(cat.monthly_budget) / totalRawBudget
+    return Math.max(0, Number(cat.monthly_budget) - proportion * variableMisc)
+  }
 
   const [adding,    setAdding]    = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -277,11 +297,11 @@ export default function JointVariable({ period }) {
     )
   }
 
-  // ── Totals across all categories ─────────────────────────────
-  const totalBudget = categories.reduce((s, c) => s + Number(c.monthly_budget), 0)
+  // ── Totals across all categories (using effective budgets post-misc) ─
+  const totalEffectiveBudget = categories.reduce((s, c) => s + effectiveBudget(c), 0)
   const totalSpent  = transactions.reduce((s, tx) => s + Number(tx.amount), 0)
-  const totalLeft   = totalBudget - totalSpent
-  const totalPct    = totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0
+  const totalLeft   = totalEffectiveBudget - totalSpent
+  const totalPct    = totalEffectiveBudget > 0 ? Math.round((totalSpent / totalEffectiveBudget) * 100) : 0
   const summaryColor = totalPct >= 80 ? t.red : totalPct >= 50 ? t.amber : t.green
 
   return (
@@ -319,7 +339,7 @@ export default function JointVariable({ period }) {
               </div>
               <div className="text-right">
                 <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Budget</p>
-                <p className="font-bold" style={{ color: t.textPrimary }}>{currency(totalBudget)}</p>
+                <p className="font-bold" style={{ color: t.textPrimary }}>{currency(totalEffectiveBudget)}</p>
               </div>
               <div className="text-right">
                 <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>{totalLeft >= 0 ? 'Remaining' : 'Over'}</p>
@@ -340,7 +360,7 @@ export default function JointVariable({ period }) {
           {categories.map(cat => {
             const catTxns = transactions.filter(tx => tx.category_id === cat.id)
             const spent    = catTxns.reduce((s, tx) => s + Number(tx.amount), 0)
-            const budget   = Number(cat.monthly_budget)
+            const budget   = effectiveBudget(cat) // proportionally reduced by variable misc
             const remaining = budget - spent
             const pct      = budget > 0 ? Math.round((spent / budget) * 100) : 0
             const warn = pct >= 80

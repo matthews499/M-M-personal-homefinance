@@ -7,6 +7,12 @@ import { format, parseISO } from 'date-fns'
 
 const fmt = n => Number(n).toFixed(2)
 
+// Hardcoded names so the label works even if the profile join fails RLS
+const USER_NAMES = {
+  'c722d728-5abe-41fe-9965-3f5d5c69a891': 'Matthew',
+  '45b7ef92-2b47-47a8-ae2b-f7348271b62c': 'Maddy',
+}
+
 function fmtDueDate(period) {
   try {
     return format(parseISO(`${period}-25`), 'd MMM')
@@ -50,7 +56,7 @@ export function TasksSection() {
       <ul className="space-y-2">
         {tasks.map(task => {
           const isOwn    = task.user_id === userId
-          const userName = task.user?.name ?? 'You'
+          const userName = USER_NAMES[task.user_id] ?? task.user?.name ?? 'Partner'
           const dueDate  = fmtDueDate(task.period)
 
           return (

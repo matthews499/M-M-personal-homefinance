@@ -1,6 +1,39 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Component } from 'react'
 import { useAuth } from '../lib/AuthContext'
 import { t, cardStyle, inputStyle } from '../utils/theme'
+
+// ── Error boundary — catches render errors instead of blanking ───
+
+class PersonalErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(error) {
+    return { error }
+  }
+  componentDidCatch(error, info) {
+    console.error('[PersonalPage] render error:', error, info)
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="rounded-2xl p-5 space-y-3" style={{ backgroundColor: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.25)' }}>
+          <p className="text-sm font-bold" style={{ color: '#f43f5e' }}>Something went wrong on this page</p>
+          <p className="text-xs font-mono break-all" style={{ color: '#f87171' }}>{this.state.error.message}</p>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="text-xs px-3 py-1.5 rounded-lg font-semibold"
+            style={{ backgroundColor: 'rgba(244,63,94,0.15)', color: '#f43f5e' }}
+          >
+            Try again
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 import { getCurrentPeriod, getPrevPeriod, getNextPeriod, getPeriodLabel, getPeriodShortRange } from '../utils/payCycle'
 import { ensureSnapshot } from '../utils/snapshotGuard'
 import { useTransfers } from '../hooks/useTransfers'
@@ -208,15 +241,17 @@ export default function PersonalPage() {
       )}
 
       {tab === 'Overview' && (
-        <div className="space-y-3">
-          <PersonalRemaining period={period} />
-          <PersonalSummary />
-          <PersonalFixed period={period} />
-          <PersonalVariable period={period} />
-          <PersonalMisc period={period} />
-          <PersonalTransfers period={period} userId={userId} />
-          <PersonalSavings />
-        </div>
+        <PersonalErrorBoundary>
+          <div className="space-y-3">
+            <PersonalRemaining period={period} />
+            <PersonalSummary />
+            <PersonalFixed period={period} />
+            <PersonalVariable period={period} />
+            <PersonalMisc period={period} />
+            <PersonalTransfers period={period} userId={userId} />
+            <PersonalSavings />
+          </div>
+        </PersonalErrorBoundary>
       )}
 
       {tab === 'Reports'  && <PersonalReports period={period} />}

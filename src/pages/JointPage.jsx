@@ -76,14 +76,15 @@ function PeriodNav({ period, onChange }) {
 /**
  * Combined joint variable budget card.
  *
- * Total budget  = Σ variable category budgets + variable-type misc this period
- * Amount spent  = Σ joint_transactions this period + variable-type misc this period
- * Remaining     = total budget − amount spent
+ * Variable-type misc:
+ *   Total budget  = Σ variable category budgets  (UNCHANGED — misc is not added)
+ *   Amount spent  = Σ joint_transactions + variable misc  (remaining DROPS)
+ *   Category ceilings are proportionally reduced in JointVariable component.
  *
- * Variable misc appears in both budget and spent so it is "neutral" to the
- * remaining figure, but widens the progress bar denominator to show a more
- * accurate % picture.  Personal-type misc is excluded entirely (handled via
- * tasks for individual repayment).
+ * Personal-type misc:
+ *   Total budget  = Σ variable category budgets + personal misc  (budget WIDENS)
+ *   Amount spent  = Σ joint_transactions + personal misc  (remaining UNCHANGED)
+ *   Each user's personal disposable reduces via pre-inserted personal_misc_expenses.
  *
  * Progress bar: green 0–50%, amber 50–80%, red 80%+
  * Threshold alerts (bell + email) at 50%, 80%, 100% for both users.
@@ -95,11 +96,19 @@ function JointBudgetCard({ period }) {
 
   const loading = varLoading || miscLoading
 
-  // Variable-type misc in this period (NOT personal deductions)
+  // Variable-type misc: reduces category budget ceilings, appears as spend
   const variableMisc = sumAmount(
     miscItems.filter(i =>
       i.expense_date >= start && i.expense_date <= end &&
       i.deduction_type === 'variable'
+    )
+  )
+
+  // Personal-type misc: joint budget widens to accommodate; remaining stays the same
+  const personalMisc = sumAmount(
+    miscItems.filter(i =>
+      i.expense_date >= start && i.expense_date <= end &&
+      i.deduction_type === 'personal'
     )
   )
 
@@ -111,8 +120,10 @@ function JointBudgetCard({ period }) {
   )
 
   const varBudget   = categories.reduce((acc, c) => acc + Number(c.monthly_budget), 0)
-  const totalBudget = varBudget + variableMisc
-  const totalSpent  = categorySpent + variableMisc
+  // Bug 3: variable misc does NOT increase the budget — only spent increases (remaining drops)
+  // Bug 4: personal misc DOES increase the budget (remaining stays same — it was already spent)
+  const totalBudget = varBudget + personalMisc
+  const totalSpent  = categorySpent + variableMisc + personalMisc
   const remaining   = totalBudget - totalSpent
   const positive    = remaining >= 0
 
@@ -178,7 +189,12 @@ function JointBudgetCard({ period }) {
         </span>
         {variableMisc > 0 && (
           <span className="text-xs" style={{ color: t.textMuted }}>
-            Misc <span className="font-semibold" style={{ color: t.textSecondary }}>{currency(variableMisc)}</span>
+            Misc (var) <span className="font-semibold" style={{ color: t.textSecondary }}>{currency(variableMisc)}</span>
+          </span>
+        )}
+        {personalMisc > 0 && (
+          <span className="text-xs" style={{ color: t.textMuted }}>
+            Misc (personal) <span className="font-semibold" style={{ color: t.textSecondary }}>{currency(personalMisc)}</span>
           </span>
         )}
       </div>

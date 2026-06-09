@@ -108,18 +108,22 @@ export function useJointVariable(period = getCurrentPeriod()) {
     if (totalBudget > 0 && totalSpent / totalBudget >= 0.8) {
       await triggerOverall80PctAlert(totalSpent, totalBudget)
     }
+
+    broadcast(KEY) // Bug 5: keep JointBudgetCard in sync
   }
 
   async function updateTransaction(id, fields) {
     const { error } = await supabase.from('joint_transactions').update(fields).eq('id', id)
     if (error) throw new Error(error.message)
     await fetch()
+    broadcast(KEY)
   }
 
   async function removeTransaction(id) {
     const { error } = await supabase.from('joint_transactions').delete().eq('id', id)
     if (error) throw new Error(error.message)
     await fetch()
+    broadcast(KEY)
   }
 
   // ── Per-category 80% alert ───────────────────────────────────

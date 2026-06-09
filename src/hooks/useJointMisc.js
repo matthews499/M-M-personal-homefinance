@@ -5,6 +5,8 @@ import { broadcast, listenFor } from '../utils/broadcast'
 import { createExpenseTasks } from '../utils/createExpenseTasks'
 
 const KEY = 'joint-misc'
+const MATTHEW_UUID = 'c722d728-5abe-41fe-9965-3f5d5c69a891'
+const MADDY_UUID   = '45b7ef92-2b47-47a8-ae2b-f7348271b62c'
 
 export function useJointMisc() {
   const { session } = useAuth()
@@ -67,7 +69,8 @@ export function useJointMisc() {
       broadcast('joint-variable') // refresh variable spending views
 
     } else {
-      // 'personal' deduction — save misc record then create tasks
+      // 'personal' deduction — save misc record, pre-insert personal_misc for each user,
+      // then create tasks (to remind each user to top up the joint pot).
       const { data: miscRow, error } = await supabase
         .from('joint_misc_expenses')
         .insert({ ...coreFields, deduction_type, custom_split_ratio: custom_split_ratio ?? null })
@@ -75,12 +78,35 @@ export function useJointMisc() {
         .single()
       if (error) throw new Error(error.message)
 
-      // Create expense_topup tasks for both users
+      // Determine split ratio
+      let matthewRatio
+      if (custom_split_ratio !== null && custom_split_ratio !== undefined) {
+        matthewRatio = Number(custom_split_ratio)
+      } else {
+        const { data: settings } = await supabase
+          .from('app_settings')
+          .select('matthew_split_ratio')
+          .single()
+        matthewRatio = Number(settings?.matthew_split_ratio ?? 0.5)
+      }
+      const maddyRatio = 1 - matthewRatio
+      const total = Number(coreFields.amount)
+      const expenseDate = coreFields.expense_date ?? new Date().toISOString().slice(0, 10)
+
+      // Pre-insert personal_misc_expenses for each user so disposable reduces immediately
+      await supabase.from('personal_misc_expenses').insert([
+        { user_id: MATTHEW_UUID, name: coreFields.name, amount: parseFloat((total * matthewRatio).toFixed(2)), expense_date: expenseDate },
+        { user_id: MADDY_UUID,   name: coreFields.name, amount: parseFloat((total * maddyRatio  ).toFixed(2)), expense_date: expenseDate },
+      ])
+      broadcast('personal-misc') // update both users' disposable on dashboard immediately
+
+      // Create expense_topup tasks for both users (to remember to transfer to joint pot)
+      // related_expense_type = null so completeTask skips the double personal_misc insert
       createExpenseTasks({
         expenseId:     miscRow.id,
-        expenseType:   null,   // no constraint-checked type for misc
+        expenseType:   null,
         expenseName:   coreFields.name,
-        expenseAmount: Number(coreFields.amount),
+        expenseAmount: total,
         customRatio:   custom_split_ratio ?? null,
       }).catch(e => console.warn('[useJointMisc] task creation failed:', e.message))
     }

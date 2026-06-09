@@ -424,6 +424,7 @@ export default function DashboardPage() {
         ].map(({ person, available, contribution, disposable, isMe }) => {
           const personalFixed   = Number(person.personal_fixed_total ?? 0)
           const contribPct      = derived.totalAvailable > 0 ? Math.round((contribution / derived.totalAvailable) * 100) : 0
+          const availPct        = derived.totalAvailable > 0 ? Math.round((available   / derived.totalAvailable) * 100) : 0
           const dispPct         = derived.totalDisposable > 0 ? Math.round((disposable / derived.totalDisposable) * 100) : 0
           return (
             <div
@@ -442,26 +443,35 @@ export default function DashboardPage() {
               </div>
 
               <div className="space-y-2.5" style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '10px' }}>
+                {/* 1. Salary */}
                 <div>
                   <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Salary</p>
                   <p className="text-base font-bold tabular-nums" style={{ color: t.textPrimary }}>{currency(Number(person.salary))}</p>
                 </div>
-                {personalFixed > 0 && (
-                  <div style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '8px' }}>
-                    <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Personal fixed</p>
-                    <p className="text-sm font-bold tabular-nums" style={{ color: t.red }}>−{currency(personalFixed)}</p>
-                  </div>
-                )}
+                {/* 2. Personal fixed (always show so layout is consistent) */}
                 <div style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '8px' }}>
-                  <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Contribution</p>
+                  <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Personal fixed</p>
+                  <p className="text-sm font-bold tabular-nums" style={{ color: personalFixed > 0 ? t.red : t.textMuted }}>
+                    {personalFixed > 0 ? `−${currency(personalFixed)}` : `−${currency(0)}`}
+                  </p>
+                </div>
+                {/* 3. Total contribution to household = available = salary − personal fixed */}
+                <div style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '8px' }}>
+                  <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Household contribution</p>
+                  <p className="text-sm font-bold tabular-nums" style={{ color: available >= 0 ? t.textPrimary : t.red }}>{currency(available)}</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: t.textMuted }}>{availPct}% of household</p>
+                </div>
+                {/* 4. Contribution to joint pot = available − disposable */}
+                <div style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '8px' }}>
+                  <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Joint pot contribution</p>
                   <p className="text-sm font-bold tabular-nums" style={{ color: contribution >= 0 ? t.textPrimary : t.red }}>{currency(contribution)}</p>
                   <p className="text-[10px] mt-0.5" style={{ color: t.textMuted }}>{contribPct}% of combined available</p>
-                  <p className="text-[10px]" style={{ color: t.textMuted }}>after personal expenses</p>
                 </div>
+                {/* 5. Personal disposable */}
                 <div style={{ borderTop: `1px solid ${t.divider}`, paddingTop: '8px' }}>
                   <p className="text-xs mb-0.5" style={{ color: t.textMuted }}>Disposable</p>
                   <p className="text-sm font-bold tabular-nums" style={{ color: t.green }}>{currency(disposable)}</p>
-                  <p className="text-[10px] mt-0.5" style={{ color: t.textMuted }}>{dispPct}% of total disposable</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: t.textMuted }}>{dispPct}% of disposable pot</p>
                 </div>
               </div>
             </div>

@@ -54,8 +54,10 @@ export function useTasks() {
     if (error) throw new Error(error.message)
 
     // For expense_topup: create the personal misc expense so it shows
-    // in the personal account and deducts from disposable
-    if (task.type === 'expense_topup') {
+    // in the personal account and deducts from disposable.
+    // EXCEPTION: tasks created from joint personal misc (related_expense_type === null)
+    // already have personal_misc pre-inserted at creation time — don't double-count.
+    if (task.type === 'expense_topup' && task.related_expense_type !== null) {
       await supabase
         .from('personal_misc_expenses')
         .insert({
