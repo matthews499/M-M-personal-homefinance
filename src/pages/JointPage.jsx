@@ -11,10 +11,12 @@ import { sumAmount } from '../utils/calculations'
 import { checkJointBudgetAlerts } from '../utils/checkJointBudgetAlerts'
 import JointFixed    from '../components/joint/JointFixed'
 import JointVariable from '../components/joint/JointVariable'
-import JointMisc    from '../components/joint/JointMisc'
+import JointMisc     from '../components/joint/JointMisc'
+import JointTopup    from '../components/joint/JointTopup'
 import JointSavings  from '../components/joint/JointSavings'
 import JointReports  from '../components/joint/JointReports'
 import JointNotebook from '../components/joint/JointNotebook'
+import { useJointTopups } from '../hooks/useJointTopups'
 
 const TABS = ['Overview', 'Reports', 'Notebook']
 
@@ -93,8 +95,9 @@ function JointBudgetCard({ period }) {
   const { start, end } = getPeriodDateRange(period)
   const { categories, transactions, loading: varLoading } = useJointVariable(period)
   const { items: miscItems, loading: miscLoading }         = useJointMisc()
+  const { items: topupItems, loading: topupLoading }       = useJointTopups()
 
-  const loading = varLoading || miscLoading
+  const loading = varLoading || miscLoading || topupLoading
 
   // Variable-type misc: reduces category budget ceilings, appears as spend
   const variableMisc = sumAmount(
@@ -119,10 +122,18 @@ function JointBudgetCard({ period }) {
     )
   )
 
+  // Top-ups: increases budget and remaining WITHOUT counting as spending
+  const topupTotal = sumAmount(
+    topupItems.filter(i =>
+      i.expense_date >= start && i.expense_date <= end
+    )
+  )
+
   const varBudget   = categories.reduce((acc, c) => acc + Number(c.monthly_budget), 0)
   // Bug 3: variable misc does NOT increase the budget — only spent increases (remaining drops)
   // Bug 4: personal misc DOES increase the budget (remaining stays same — it was already spent)
-  const totalBudget = varBudget + personalMisc
+  // Top-up: increases budget (and therefore remaining) but does NOT add to spent
+  const totalBudget = varBudget + personalMisc + topupTotal
   const totalSpent  = categorySpent + variableMisc + personalMisc
   const remaining   = totalBudget - totalSpent
   const positive    = remaining >= 0
@@ -197,6 +208,11 @@ function JointBudgetCard({ period }) {
             Misc (personal) <span className="font-semibold" style={{ color: t.textSecondary }}>{currency(personalMisc)}</span>
           </span>
         )}
+        {topupTotal > 0 && (
+          <span className="text-xs" style={{ color: t.textMuted }}>
+            Top-ups <span className="font-semibold" style={{ color: t.green }}>+{currency(topupTotal)}</span>
+          </span>
+        )}
       </div>
     </div>
   )
@@ -232,6 +248,7 @@ export default function JointPage() {
           <JointFixed period={period} />
           <JointVariable period={period} />
           <JointMisc period={period} />
+          <JointTopup period={period} />
           <JointSavings />
         </div>
       )}

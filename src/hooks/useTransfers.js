@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { broadcast, listenFor } from '../utils/broadcast'
@@ -25,29 +25,38 @@ export function useTransfers() {
     setLoading(false)
   }, [userId])
 
+  // Keep a stable ref so the realtime callback always calls the latest fetch
+  // without making the realtime effect re-run on every fetch change
+  const fetchRef = useRef(fetch)
+  useEffect(() => { fetchRef.current = fetch }, [fetch])
+
+  // Initial fetch + same-tab broadcast reactivity
   useEffect(() => {
     fetch()
-    // Same-tab broadcast reactivity
-    const unsub = listenFor(KEY, fetch)
+    return listenFor(KEY, fetch)
+  }, [fetch])
 
-    // Cross-device realtime so recipient updates immediately when sender transfers
+  // Cross-device realtime subscription — only created/destroyed when userId changes.
+  // Bug fix: using `fetch` directly as a dependency caused the effect to re-run on
+  // every render, attempting to add postgres_changes callbacks to an already-subscribed
+  // channel and throwing "cannot add postgres_changes callbacks after subscribe()".
+  useEffect(() => {
+    if (!userId) return
+
     const channel = supabase
-      .channel('transfers-realtime')
+      .channel(`transfers-realtime-${userId}`)
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'personal_transfers' },
-        () => { fetch(); broadcast(KEY) }
+        () => { fetchRef.current?.(); broadcast(KEY) }
       )
       .on('postgres_changes',
         { event: 'DELETE', schema: 'public', table: 'personal_transfers' },
-        () => { fetch(); broadcast(KEY) }
+        () => { fetchRef.current?.(); broadcast(KEY) }
       )
       .subscribe()
 
-    return () => {
-      unsub()
-      supabase.removeChannel(channel)
-    }
-  }, [fetch])
+    return () => { supabase.removeChannel(channel) }
+  }, [userId]) // userId-only dependency — channel is stable for the whole session
 
   function transfersForPeriod(period) {
     return transfers.filter(t => t.period === period)
