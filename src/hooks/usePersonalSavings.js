@@ -1,6 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
+import { broadcast, listenFor } from '../utils/broadcast'
+
+const KEY = 'personal-savings'
 
 export function usePersonalSavings() {
   const { session } = useAuth()
@@ -31,7 +34,10 @@ export function usePersonalSavings() {
     }
   }, [userId])
 
-  useEffect(() => { fetch() }, [fetch])
+  useEffect(() => {
+    fetch()
+    return listenFor(KEY, fetch)
+  }, [fetch])
 
   function transactionsForPot(potId) {
     return transactions.filter(t => t.pot_id === potId)
@@ -44,6 +50,7 @@ export function usePersonalSavings() {
       .insert({ ...fields, user_id: userId })
     if (error) throw new Error(error.message)
     await fetch()
+    broadcast(KEY)
   }
 
   async function updatePot(id, fields) {
@@ -53,6 +60,7 @@ export function usePersonalSavings() {
       .eq('id', id)
     if (error) throw new Error(error.message)
     await fetch()
+    broadcast(KEY)
   }
 
   async function removePot(id) {
@@ -62,16 +70,49 @@ export function usePersonalSavings() {
       .eq('id', id)
     if (error) throw new Error(error.message)
     await fetch()
+    broadcast(KEY)
   }
 
+  /**
+   * Add a deposit or withdrawal to a personal savings pot.
+   *
+   * Open mode deposits: also inserts a personal_misc_expenses row so the amount
+   *   is deducted from the user's personal disposable immediately.
+   *   Spec: "each deposit is a one-off manual log, deducts from personal
+   *   disposable at time of logging".
+   *
+   * Targeted mode deposits: no disposable deduction here — the monthly
+   *   commitment is handled as a personal fixed cost (auto-deducted each period).
+   *
+   * Withdrawals (both modes): just reduce the pot balance. No disposable
+   *   impact. Spec: "withdrawals just reduce the pot balance with no effect
+   *   on disposable" for personal pots.
+   */
   async function addTransaction(potId, { type, amount, transaction_date, note }) {
-    // BUG FIX: derive month (first day of the transaction month) — column is NOT NULL
     const month = transaction_date.slice(0, 7) + '-01'
+    const pot   = pots.find(p => p.id === potId)
+
     const { error } = await supabase
       .from('personal_savings_deposits')
       .insert({ pot_id: potId, user_id: userId, type, amount, transaction_date, note, month })
     if (error) throw new Error(error.message)
+
+    // Open-mode deposit: deduct from personal disposable
+    if (pot?.mode === 'open' && type === 'deposit') {
+      const { error: miscErr } = await supabase
+        .from('personal_misc_expenses')
+        .insert({
+          user_id:      userId,
+          name:         `Savings deposit — ${pot.name}`,
+          amount:       parseFloat(Number(amount).toFixed(2)),
+          expense_date: transaction_date,
+        })
+      if (miscErr) console.warn('[usePersonalSavings] personal_misc insert failed:', miscErr.message)
+      broadcast('personal-misc')
+    }
+
     await fetch()
+    broadcast(KEY)
   }
 
   // Legacy shim
@@ -86,6 +127,7 @@ export function usePersonalSavings() {
       .eq('id', id)
     if (error) throw new Error(error.message)
     await fetch()
+    broadcast(KEY)
   }
 
   return {

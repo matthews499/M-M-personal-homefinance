@@ -1,9 +1,22 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { broadcast, listenFor } from '../utils/broadcast'
 
 const KEY = 'transfers'
+
+// NOTE: Supabase Realtime is intentionally NOT used here.
+//
+// The previous fix (separating the channel into its own useEffect([userId]))
+// still threw "cannot add postgres_changes callbacks after subscribe()" in
+// React Strict Mode because removeChannel() is async — the cleanup fired but
+// the channel was still registered when the next effect ran and tried to
+// reuse the same channel name.
+//
+// Transfers are only mutated from within this same tab (sendTransfer /
+// removeTransfer), and both already call broadcast(KEY) after every write.
+// Cross-device realtime is not needed for a two-person same-session app.
+// The broadcast pattern is sufficient and avoids this entire class of error.
 
 export function useTransfers() {
   const { session } = useAuth()
@@ -25,38 +38,12 @@ export function useTransfers() {
     setLoading(false)
   }, [userId])
 
-  // Keep a stable ref so the realtime callback always calls the latest fetch
-  // without making the realtime effect re-run on every fetch change
-  const fetchRef = useRef(fetch)
-  useEffect(() => { fetchRef.current = fetch }, [fetch])
-
-  // Initial fetch + same-tab broadcast reactivity
+  // Initial fetch + same-tab broadcast reactivity only.
+  // No Supabase Realtime channel — see comment above.
   useEffect(() => {
     fetch()
     return listenFor(KEY, fetch)
   }, [fetch])
-
-  // Cross-device realtime subscription — only created/destroyed when userId changes.
-  // Bug fix: using `fetch` directly as a dependency caused the effect to re-run on
-  // every render, attempting to add postgres_changes callbacks to an already-subscribed
-  // channel and throwing "cannot add postgres_changes callbacks after subscribe()".
-  useEffect(() => {
-    if (!userId) return
-
-    const channel = supabase
-      .channel(`transfers-realtime-${userId}`)
-      .on('postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'personal_transfers' },
-        () => { fetchRef.current?.(); broadcast(KEY) }
-      )
-      .on('postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'personal_transfers' },
-        () => { fetchRef.current?.(); broadcast(KEY) }
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [userId]) // userId-only dependency — channel is stable for the whole session
 
   function transfersForPeriod(period) {
     return transfers.filter(t => t.period === period)
