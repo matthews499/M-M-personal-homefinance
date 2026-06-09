@@ -119,8 +119,24 @@ export function useJointTopups() {
   }
 
   async function remove(id) {
+    const item = items.find(i => i.id === id)
+
     const { error } = await supabase.from('joint_topups').delete().eq('id', id)
     if (error) throw new Error(error.message)
+
+    // Cascade: delete the personal_misc_expenses rows that were pre-inserted on creation.
+    // The label must match exactly what create() used: note?.trim() || 'Joint pot top-up'.
+    if (item) {
+      const label = item.note?.trim() || 'Joint pot top-up'
+      await supabase
+        .from('personal_misc_expenses')
+        .delete()
+        .eq('name', label)
+        .eq('expense_date', item.expense_date)
+        .in('user_id', [MATTHEW_UUID, MADDY_UUID])
+      broadcast('personal-misc')
+    }
+
     await fetch()
     broadcast(KEY)
   }

@@ -45,13 +45,13 @@ function NewPotModal({ onSave, onClose }) {
   async function handleSave() {
     if (!name.trim()) { setErr('Name is required.'); return }
     if (mode === 'targeted' && (!target || !targetDate)) { setErr('Target amount and date are required.'); return }
-    if (mode === 'open' && !monthly) { setErr('Monthly commitment is required.'); return }
     setSaving(true)
     try {
       if (mode === 'targeted') {
         await onSave({ name: name.trim(), mode: 'targeted', target_amount: parseFloat(target), target_date: targetDate })
       } else {
-        await onSave({ name: name.trim(), mode: 'open', monthly_commitment: parseFloat(monthly) })
+        // monthly_commitment is optional — defaults to 0 if left blank
+        await onSave({ name: name.trim(), mode: 'open', monthly_commitment: monthly ? parseFloat(monthly) : 0 })
       }
       onClose()
     } catch (e) { setErr(e.message); setSaving(false) }
@@ -100,9 +100,9 @@ function NewPotModal({ onSave, onClose }) {
         </div>
       ) : (
         <div>
-          <FieldLabel>Monthly commitment (£)</FieldLabel>
+          <FieldLabel>Monthly commitment (£) — optional</FieldLabel>
           <input type="number" value={monthly} onChange={e => setMonthly(e.target.value)} placeholder="0.00" className="w-full px-3 py-3 rounded-xl text-base outline-none focus:ring-1 focus:ring-violet-500" style={inputStyle} />
-          <p className="text-xs mt-1.5" style={{ color: t.textMuted }}>Deducted from your personal disposable each period.</p>
+          <p className="text-xs mt-1.5" style={{ color: t.textMuted }}>If set, deducted from your disposable each period. Leave blank for no auto-deduction.</p>
         </div>
       )}
 
@@ -128,7 +128,7 @@ function EditPotModal({ pot, onSave, onClose }) {
   async function handleSave() {
     setSaving(true)
     if (pot.mode === 'open') {
-      await onSave(pot.id, { monthly_commitment: parseFloat(monthly) })
+      await onSave(pot.id, { monthly_commitment: monthly !== '' ? parseFloat(monthly) : 0 })
     } else {
       await onSave(pot.id, { target_amount: parseFloat(target), target_date: targetDate })
     }

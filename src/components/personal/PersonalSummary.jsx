@@ -42,17 +42,19 @@ export default function PersonalSummary() {
   const jointContrib  = available - myDisposable
   const varSpent      = sumAmount(transactionsForMonth(transactions, month))
 
-  // Targeted-mode savings only — open-mode deposits deduct at time of logging
-  // and are already reflected in the personal misc / variable totals.
-  const targetedSavingsCommitment = pots
-    .filter(p => p.mode !== 'open')
-    .reduce((acc, pot) => {
-      const txns    = transactionsForPot(pot.id)
-      const balance = calcSavingsBalance(txns)
-      const target  = Number(pot.target_amount ?? 0)
-      if (balance >= target) return acc
-      return acc + calcSavingsMonthlyRequired(pot, txns)
-    }, 0)
+  // Monthly savings commitment across all pots:
+  //   • Open mode:     fixed monthly_commitment (individual deposits also deduct at time of logging)
+  //   • Targeted mode: calculated from remaining target balance and date
+  const targetedSavingsCommitment = pots.reduce((acc, pot) => {
+    if (pot.mode === 'open') {
+      return acc + Number(pot.monthly_commitment ?? 0)
+    }
+    const txns    = transactionsForPot(pot.id)
+    const balance = calcSavingsBalance(txns)
+    const target  = Number(pot.target_amount ?? 0)
+    if (balance >= target) return acc
+    return acc + calcSavingsMonthlyRequired(pot, txns)
+  }, 0)
 
   // True disposable = allocated share − pre-committed savings
   const trueDisposable = myDisposable - targetedSavingsCommitment

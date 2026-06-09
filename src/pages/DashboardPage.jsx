@@ -322,15 +322,16 @@ export default function DashboardPage() {
     const userId    = derived.me.user_id
     const tNet      = transferNetForUser(period, userId)
     const tOut      = Math.max(0, -tNet)
-    const savCommit = pots
-      .filter(p => p.mode !== 'open')
-      .reduce((acc, pot) => {
-        const txns    = transactionsForPot(pot.id)
-        const balance = calcSavingsBalance(txns)
-        const target  = Number(pot.target_amount ?? 0)
-        if (balance >= target) return acc
-        return acc + calcSavingsMonthlyRequired(pot, txns)
-      }, 0)
+    const savCommit = pots.reduce((acc, pot) => {
+      if (pot.mode === 'open') {
+        return acc + Number(pot.monthly_commitment ?? 0)
+      }
+      const txns    = transactionsForPot(pot.id)
+      const balance = calcSavingsBalance(txns)
+      const target  = Number(pot.target_amount ?? 0)
+      if (balance >= target) return acc
+      return acc + calcSavingsMonthlyRequired(pot, txns)
+    }, 0)
     const trueDisp  = derived.myDisposable - savCommit
     const varSpent  = Number(derived.mySummary.var_spent  ?? 0)
     const miscTotal = Number(derived.mySummary.misc_total ?? 0)
@@ -381,16 +382,19 @@ export default function DashboardPage() {
   const surplus = jointBalance >= 0
   // period is declared at the top of the component (before hooks)
 
-  // Targeted-mode savings commitment (open-mode deducts at deposit time via personal_misc)
-  const targetedSavCommit = pots
-    .filter(p => p.mode !== 'open')
-    .reduce((acc, pot) => {
-      const txns    = transactionsForPot(pot.id)
-      const balance = calcSavingsBalance(txns)
-      const target  = Number(pot.target_amount ?? 0)
-      if (balance >= target) return acc
-      return acc + calcSavingsMonthlyRequired(pot, txns)
-    }, 0)
+  // Monthly savings commitment across all pots for the current user:
+  //   • Open mode:     fixed monthly_commitment (individual deposits also deduct at time of logging)
+  //   • Targeted mode: calculated from remaining target balance and date
+  const targetedSavCommit = pots.reduce((acc, pot) => {
+    if (pot.mode === 'open') {
+      return acc + Number(pot.monthly_commitment ?? 0)
+    }
+    const txns    = transactionsForPot(pot.id)
+    const balance = calcSavingsBalance(txns)
+    const target  = Number(pot.target_amount ?? 0)
+    if (balance >= target) return acc
+    return acc + calcSavingsMonthlyRequired(pot, txns)
+  }, 0)
 
   // True disposable = allocated share − targeted savings pre-commitments.
   // This is the denominator for the % tracker — not affected by transfers.

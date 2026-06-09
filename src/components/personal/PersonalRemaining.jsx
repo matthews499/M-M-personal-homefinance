@@ -18,17 +18,19 @@ export default function PersonalRemaining({ period }) {
   // Wait for both main data and personal summaries (var_spent / misc_total)
   const loading = dashLoading || psLoading || savLoading
 
-  // Targeted-mode savings only — open-mode deposits deduct at time of logging
-  // (via personal_misc_expenses) and are already captured in misc_total from the RPC.
-  const targetedSavingsCommitment = pots
-    .filter(p => p.mode !== 'open')
-    .reduce((acc, pot) => {
-      const txns    = transactionsForPot(pot.id)
-      const balance = calcSavingsBalance(txns)
-      const target  = Number(pot.target_amount ?? 0)
-      if (balance >= target) return acc // pot complete — no more commitment
-      return acc + calcSavingsMonthlyRequired(pot, txns)
-    }, 0)
+  // Monthly savings commitment across all pots:
+  //   • Open mode:     fixed monthly_commitment (individual deposits also deduct at time of logging)
+  //   • Targeted mode: calculated from remaining target balance and date
+  const targetedSavingsCommitment = pots.reduce((acc, pot) => {
+    if (pot.mode === 'open') {
+      return acc + Number(pot.monthly_commitment ?? 0)
+    }
+    const txns    = transactionsForPot(pot.id)
+    const balance = calcSavingsBalance(txns)
+    const target  = Number(pot.target_amount ?? 0)
+    if (balance >= target) return acc // pot complete — no more commitment
+    return acc + calcSavingsMonthlyRequired(pot, txns)
+  }, 0)
 
   // Fire disposable alerts once data is ready.
   // Uses trueDisposable (targeted savings already deducted) as the denominator.
